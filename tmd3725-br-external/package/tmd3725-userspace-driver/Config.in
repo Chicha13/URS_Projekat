@@ -1,0 +1,15 @@
+config BR2_PACKAGE_TMD3725_USERSPACE_DRIVER
+    bool "tmd3725-userspace-driver"
+    help
+      Userspace driver for the ams TMD3725 color sense(RGBC+IR), ambient light and proximity sensor.
+
+      This implementation performs:
+        - Ambient light sensing (ALS) with automatic ALS gain(AGAIN) control
+        - Proximity detection with example thresholds
+        - Lux (illuminance) calculation using open-air default coefficients
+        - Correlated Color Temperature (CCT) estimation
+        - Hue and Saturation color space conversion
+        - CIE 1931 (x,y) chromaticity coordinates
+        
+      The driver communicates with the sensor via the I2C bus (/dev/i2c-x)
+      Results are displayed on the console periodically.

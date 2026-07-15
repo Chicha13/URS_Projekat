@@ -1,0 +1,1 @@
+source "$BR2_EXTERNAL_TMD3725_PATH/package/tmd3725-userspace-driver/Config.in"
