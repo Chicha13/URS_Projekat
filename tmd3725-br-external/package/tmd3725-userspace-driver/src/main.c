@@ -87,6 +87,7 @@ int main(void) {
     int fd = tmd3725_init(config.i2c_bus);
     if (fd < 0) return -1;
 
+    usleep(3000);//Time from power-on to ready to receive I2C commands typical value 1.5ms
     if (tmd3725_verify_id(fd, &sensor_id) != 0) {
         fprintf(stderr, "[TMD3725][Error] Invalid Sensor ID. Expected: 0x%02X, Got: 0x%02X\n",
                 TMD3725_DEVICE_ID, sensor_id);
