@@ -1,20 +1,21 @@
-CC     ?= gcc
-CFLAGS ?= -Wall
+CC ?= gcc
+CFLAGS ?=
+CFLAGS += -Wall -MMD -MP
 LDFLAGS ?=
 
 TARGET = tmd3725_sensor
-SRCS   = main.c TMD3725.c als_process.c
-OBJS   = $(SRCS:.c=.o)
+SRCS = main.c TMD3725.c als_process.c
+OBJS = $(SRCS:.c=.o)
+DEPS = $(SRCS:.c=.d)
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CC) $(OBJS) -o $@ $(LDFLAGS)
-	
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-clean:
-	rm -f $(OBJS) $(TARGET)
+-include $(DEPS)
 
-.PHONY: all clean
+.PHONY: all
