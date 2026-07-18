@@ -37,31 +37,36 @@ void als_update_cache(void)
  * Computes photopic illuminance from raw RGBC counts using
  * default open-air coefficients (DGF, R/G/B/C_COEF).
  * CPL value depends on current ALS gain/integration time
- * Returns 0 for darkness, low signal, or negative results
+ * Returns 0 for darkness, noise threshold, returns -1 for negative result, 1 otherwise
  * ================================================================ */
-float compute_lux(uint16_t rawr, uint16_t rawg,
-                  uint16_t rawb, uint16_t rawc)
-{
-    if (rawc < 10) return 0.0f;		//Dark ADC count value ~2 (noise)
-	
-    float lux = (C_COEF*(float)rawc + R_COEF*(float)rawr +
-                G_COEF*(float)rawg + B_COEF*(float)rawb) / g_cpl_value;
-    return (lux < 0.0f) ? 0.0f : lux;
+ int compute_lux(uint16_t rawr, uint16_t rawg,
+                 uint16_t rawb, uint16_t rawc, float *lux)
+ {
+    *lux = 0.0f;
+    if (rawc < 10) return 0;
+    
+    float result = (C_COEF*(float)rawc + R_COEF*(float)rawr +
+                   G_COEF*(float)rawg + B_COEF*(float)rawb) / g_cpl_value;
+
+    if (result < 0.0f) return -1;
+    *lux = result;
+    return 1;
 }
 
 /* ================================================================
  * CCT
  * Estimates correlated color temperature of the light from the blue/red ratio.
  * No IR compensation - the sensors hardware UV/IR filters make this unnecessary.
- * Returns -1 when the red/blue channel count number is too low 
+ * Returns 0 when the red/blue channel count number is too low 
  * to give an adequate ratio.
  * ================================================================ */
-float compute_CCT(uint16_t rawb, uint16_t rawr)
+ int compute_cct(uint16_t rawb, uint16_t rawr, float *cct)
 {
-    if (rawr < 10 || rawb < 10) return -1.0f;
-    return CT_COEF * ((float)rawb / (float)rawr) + CT_OFFSET;
+    *cct = 0.0f;
+    if (rawr < 10 || rawb < 10) return 0;   // R/B channel count too low
+    *cct = CT_COEF * ((float)rawb / (float)rawr) + CT_OFFSET;
+    return 1;
 }
-
 
 /* ================================================================
  * Hue and Color Saturation
@@ -140,7 +145,7 @@ int compute_hue_saturation(uint16_t rawr, uint16_t rawg, uint16_t rawb,
  * Valid for CCT values 1667K–25000K otherwise returns 0
  * Should be noted that this will always give a (x,y) value on the Planckian locus
  * ================================================================ */
-int CCT_to_xy(float CCT, float *cx, float *cy)
+int cct_to_xy(float CCT, float *cx, float *cy)
 {
     *cx = 0.0f; *cy = 0.0f;
     if (CCT < 1667.0f || CCT > 25000.0f) return 0;
@@ -172,53 +177,58 @@ void process_als_cycle(uint16_t rawr, uint16_t rawg,
 {
     float hue = 0.0f, saturation = 0.0f;
     int hs_valid = compute_hue_saturation(rawr, rawg, rawb, &hue, &saturation);
-
-    float lux = compute_lux(rawr, rawg, rawb, rawc);
-
-    float CCT_value = compute_CCT(rawb, rawr);
-
-	int   cct_numeric_valid = (CCT_value > 0.0f);
-	float cx = 0.0f, cy = 0.0f;
-	int   cct_xy_valid = cct_numeric_valid && CCT_to_xy(CCT_value, &cx, &cy);
-					  
-	int colored = hs_valid && (saturation >= COLOR_SAT_THRESH);
+    int colored = hs_valid && (saturation >= COLOR_SAT_THRESH);
+    
+    float lux = 0.0f;
+    int lux_status = compute_lux(rawr, rawg, rawb, rawc, &lux);
+    
+    float cct = 0.0f;
+    int cct_valid = compute_cct(rawb, rawr, &cct);
+    
+    float cx = 0.0f, cy = 0.0f;
+    int cct_xy_valid = cct_to_xy(cct, &cx, &cy);
+       		
 
     printf("\n=== ALS ===\n");
     printf("Raw: C=%5u R=%5u G=%5u B=%5u  [AGAIN=%.1fx  ATIME=%.1fms]\n",
            rawc, rawr, rawg, rawb, g_again_value, g_atime_value);
 
-	if (colored) {
-			printf("Lux=%.2f [Color Saturation Lux unreliable]\n", lux);
-		} else {
-			printf("Lux=%.2f\n", lux);
-		}
+    if (lux_status == 0) {
+        printf("Lux: not measured (dark/noise, C < 10 counts)\n");
+    } else if (lux_status == -1) {
+        printf("Lux: negative (saturated spectrum)\n");
+    } else {
+        printf("Lux=%.2f%s\n", lux, colored ? " [Color Saturation Lux unreliable]" : "");
+    }
 
     if (!hs_valid) {
         printf("Hue/Saturation: Noise Threshold (RGB channels < 10 counts) - not measured\n");
 		printf("CCT/(x,y): not measured\n");
-    } else {
+    } 
+    else 
+    {
         printf("H=%.1f  S=%.3f  [%s]\n",
                hue, saturation, colored ? "Colored Light" : "Neutral Light(Hue less stable)");
 
         if (colored)
             printf("Colored (S>=%.2f) -> CCT/(x,y) not meaningful for this light source\n",
                    COLOR_SAT_THRESH);
-    }
-	
-	if (hs_valid && saturation < COLOR_SAT_THRESH) {
-		if (!cct_numeric_valid) {
+
+	if (saturation < COLOR_SAT_THRESH) {
+		if (!cct_valid) {
 			printf("CCT: red/blue channel count too low - not measured\n");
 		} 
 		else if (!cct_xy_valid) {
         printf("CCT=%.0fK (out of Planckian range 1667-25000K) - (x,y) not computed\n",
-               CCT_value);
+               cct);
 		} 
 		else {
-        printf("CCT=%.0fK  xy=(%.4f,%.4f)\n", CCT_value, cx, cy);
+        printf("CCT=%.0fK  xy=(%.4f,%.4f)\n", cct, cx, cy);
 		}
 	}
 
-
+    }
+	
     printf("===========\n\n");
 }
 
