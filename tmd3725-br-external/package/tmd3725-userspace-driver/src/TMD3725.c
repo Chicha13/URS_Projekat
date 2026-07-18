@@ -358,10 +358,10 @@ int tmd3725_adjust_again(int fd, uint16_t clear_counts)
       
 	//Force a new autozero calibration before the next ALS cycle(resets az-done flag)
     if (tmd3725_write_reg(fd, TMD3725_REG_AZ_CONFIG, 0x7F) < 0) return -1;
-
-    printf("[ALS] AGAIN: %.1fx → %.1fx  (C=%u, upper=%u, lower=%u)\n",
+/*
+    printf("[ALS] AGAIN: %.1fx -> %.1fx  (C=%u, upper=%u, lower=%u)\n",
        GAIN_TABLE[g_again_idx], GAIN_TABLE[new_idx],
-       clear_counts, upper, lower);
+       clear_counts, upper, lower);*/
 
     g_again_idx = new_idx;
     return 1;

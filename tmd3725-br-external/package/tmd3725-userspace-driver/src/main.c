@@ -83,7 +83,7 @@ int main(void) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, NULL);
-
+    sigaction(SIGTERM, &sa, NULL);
     int fd = tmd3725_init(config.i2c_bus);
     if (fd < 0) return -1;
 
@@ -123,7 +123,11 @@ int main(void) {
 
     tmd3725_data_t s_data;
 	int detected = 0;
-
+	
+    printf("\033[?1049h");   // Enter Alternate screen buffer
+    printf("\033[H");
+    fflush(stdout);
+   
     while (g_running) {
 
     if (tmd3725_read_all(fd, &s_data) < 0) {
@@ -135,6 +139,9 @@ int main(void) {
     uint8_t status = s_data.status;
 
     if ((status & PROX_DONE_MASK) && (status & ALS_DONE_MASK)) {
+    
+         printf("\033[H");//move to the top
+	 printf("\033[J");//clear screen
 
         //----------------------------------------------------------------
         // PROXIMITY
@@ -175,6 +182,7 @@ int main(void) {
            (status & TMD3725_STATUS_ASAT) ? ", ASAT" : "");
 		} 
 		else process_als_cycle(s_data.red, s_data.green, s_data.blue, s_data.clear);
+		fflush(stdout);
 		
 		int again_status = tmd3725_adjust_again(fd, s_data.clear);
 		if(again_status < 0)
@@ -189,8 +197,11 @@ int main(void) {
 
     usleep(POLL_TIME_US);
   }
+  
+    printf("\033[?1049l");  // Exit Alternate screen buffer
+    fflush(stdout);
 
-    printf("\n[TMD3725] SIGINT, attempting to send the sleep mode command\n");
+    printf("\n[TMD3725] SIGINT/SIGTERM, attempting to send the sleep mode command\n");
 	if (tmd3725_sleep(fd) < 0){
         fprintf(stderr, "[TMD3725][Error] Invalid sleep mode command to Sensor\n");
     } else {
