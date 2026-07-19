@@ -21,15 +21,15 @@
  *  4  | 64x   | 0x03  | 0x04
  *  5  | 128x  | 0x03  | 0x14  (AGAINMAX=1)
  *
- * Table provides all the possible register CFG1(AGAIN) + CFG2(AGAIN/AGAINMAX)
+ * Table provides all the possible register CFG1(AGAIN) + CFG2(AGAINL/AGAINMAX)
  * combinations for AGAIN, the values are accessed by the current index g_again_idx 
  *
  * ================================================================ */
-#define GAIN_LEVELS 6
+#define AGAIN_LEVELS 6
 
-static const float   GAIN_TABLE[GAIN_LEVELS] = { 0.5f, 1.0f, 4.0f, 16.0f, 64.0f, 128.0f };
-static const uint8_t CFG1_TABLE[GAIN_LEVELS] = { 0x00, 0x00, 0x01, 0x02,  0x03,  0x03   };
-static const uint8_t CFG2_TABLE[GAIN_LEVELS] = { 0x00, 0x04, 0x04, 0x04,  0x04,  0x14   };
+static const float   AGAIN_TABLE[AGAIN_LEVELS] = { 0.5f, 1.0f, 4.0f, 16.0f, 64.0f, 128.0f };
+static const uint8_t CFG1_TABLE[AGAIN_LEVELS] = { 0x00, 0x00, 0x01, 0x02,  0x03,  0x03   };
+static const uint8_t CFG2_TABLE[AGAIN_LEVELS] = { 0x00, 0x04, 0x04, 0x04,  0x04,  0x14   };
 
 /* ================================================================
  * Default values
@@ -48,7 +48,7 @@ static uint8_t g_atime_reg = 0x3F;
  * ================================================================ */
 float als_again(void)
 {
-    return GAIN_TABLE[g_again_idx];
+    return AGAIN_TABLE[g_again_idx];
 }
 
 /* ================================================================
@@ -348,7 +348,7 @@ int tmd3725_adjust_again(int fd, uint16_t clear_counts)
 
     if (clear_counts >= upper && g_again_idx > 0)
         new_idx = g_again_idx - 1;
-    else if (clear_counts <= lower && g_again_idx < GAIN_LEVELS - 1)
+    else if (clear_counts <= lower && g_again_idx < AGAIN_LEVELS - 1)
         new_idx = g_again_idx + 1;
 
     if (new_idx == g_again_idx) return 0;
@@ -360,7 +360,7 @@ int tmd3725_adjust_again(int fd, uint16_t clear_counts)
     if (tmd3725_write_reg(fd, TMD3725_REG_AZ_CONFIG, 0x7F) < 0) return -1;
 /*
     printf("[ALS] AGAIN: %.1fx -> %.1fx  (C=%u, upper=%u, lower=%u)\n",
-       GAIN_TABLE[g_again_idx], GAIN_TABLE[new_idx],
+       AGAIN_TABLE[g_again_idx], AGAIN_TABLE[new_idx],
        clear_counts, upper, lower);*/
 
     g_again_idx = new_idx;

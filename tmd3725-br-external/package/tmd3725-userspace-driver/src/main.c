@@ -7,9 +7,10 @@
 #include "als_process.h"
 
 static volatile sig_atomic_t g_running = 1;
+static volatile sig_atomic_t g_received_signal = 0;
 
-static void sigint_handler(int signum) {
-    (void)signum;
+static void sigint_sigterm_handler(int signum) {
+    g_received_signal = signum;
     g_running = 0;
 }
 
@@ -53,7 +54,9 @@ void load_configuration(const char *path, tmd3725_config_t *cfg) {
                 cfg->prox_det_thresh = (uint8_t)strtoul(value, NULL, 0);
             } else if (strcmp(key, "EMPTY_THRESH") == 0) {
                 cfg->prox_emp_thresh = (uint8_t)strtoul(value, NULL, 0);
-            }
+            } else {
+   		 printf("[TMD3725][Config] Unknown configuration key: %s\n", key);
+	    }
         }
     }
     fclose(f);
@@ -79,7 +82,7 @@ int main(void) {
 	load_configuration("/etc/tmd3725.conf", &config);
 
     struct sigaction sa;
-    sa.sa_handler = sigint_handler;
+    sa.sa_handler = sigint_sigterm_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, NULL);
@@ -201,7 +204,8 @@ int main(void) {
     printf("\033[?1049l");  // Exit Alternate screen buffer
     fflush(stdout);
 
-    printf("\n[TMD3725] SIGINT/SIGTERM, attempting to send the sleep mode command\n");
+    printf("\n[TMD3725] Received signal %d (%s), attempting to send the sleep mode command\n",
+         g_received_signal, strsignal(g_received_signal));
 	if (tmd3725_sleep(fd) < 0){
         fprintf(stderr, "[TMD3725][Error] Invalid sleep mode command to Sensor\n");
     } else {
