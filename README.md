@@ -16,8 +16,8 @@ Defaultna konfiguracija u okviru *Buildroot* za našu *DE1-SoC* razvojnu ploču 
 Defaultna konfiguracija za Linux kernel našeg sistema se nalazi u *buildroot/board/terasic/de1soc_cyclone5/de1_soc_defconfig*.  
 Defaultna konfiguracija za *U-Boot* bootloader *socfpga_de1_soc* se učitava iz izvornog stabla *U-Boot* *(In-tree board defconfig file)*.  
 
-Napravljen je *rootfs overlay* u koji je smješten fajl *board/terasic/de1soc_cyclone5/rootfs-overlay/etc/systemd/network/70-static.network* koji omogućava da *systemd* infrastruktura ispravno konfiguriše mrežni interfejs.  
-Dodat je *Dropbear* sofverski paket za omogućenje pristupa ploči preko *SSH* protokola, te zatim u *rootfs overlay* smješten javni ključ generisan pomoću *ssh-keygen* alata u fajl *board/terasic/de1soc_cyclone5/rootfs-overlay/root/.ssh/authorized_keys*.  
+Napravljen je *rootfs overlay* u koji je smješten fajl *buildroot/board/terasic/de1soc_cyclone5/rootfs-overlay/etc/systemd/network/70-static.network* koji omogućava da *systemd* infrastruktura ispravno konfiguriše mrežni interfejs.  
+Dodat je *Dropbear* sofverski paket za omogućenje pristupa ploči preko *SSH* protokola, te zatim u *rootfs overlay* smješten javni ključ generisan pomoću *ssh-keygen* alata u fajl *buildroot/board/terasic/de1soc_cyclone5/rootfs-overlay/root/.ssh/authorized_keys*.  
 ### Toolchain
 Korišćen je alat *Crosstool-NG* za generisanje toolchain-a, odabrana je početna konfiguracija *arm-cortexa9_neon-linux-gnueabihf* a zatim odabrane sledeće opcije:
 ```
