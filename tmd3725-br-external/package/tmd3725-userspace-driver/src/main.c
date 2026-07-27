@@ -73,8 +73,8 @@ int main(void) {
         .prate = 0x1F,
         .pcfg0 = 0x4F,
         .pcfg1 = 0x4D,
-        .wtime = 179,
-        .poll_time_us = 300000,
+        .wtime = 0x59,
+        .poll_time_us = 400000,
         .prox_det_thresh = 60,
         .prox_emp_thresh = 30
     };
@@ -106,7 +106,10 @@ int main(void) {
     }
 
 	als_update_cache();
-    // Cycle: ALS(~178ms) + PROX(~12ms) + WTIME(~500ms) = ~690ms, polling the value every 300ms (default values)
+	/*
+       Cycle: ALS(~178ms) + PROX(~12ms) + WTIME(~250ms) = ~440ms, 
+       ATIME_ms_min + WTIME_ms_min = 171.5ms + 241.2ms = 412.7ms > 400ms(POLL_TIME_US) + 3.56ms(I2C transaction worst case)
+       Polling every 400ms (default values)  */
     const useconds_t POLL_TIME_US = config.poll_time_us;
 	
 	// Thresholds for Proximity PDATA detection/release 
