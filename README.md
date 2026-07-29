@@ -166,9 +166,9 @@ Mi ćemo raditi periodičan *polling* sa uslovom da su oba mjerenja(Proximity i 
 Pošto naš uslov zahtijeva da su oba flag-a (*AINT* i *PINT*) već postavljena da bi se *poll* smatrao uspješnim, prvi trenutak kada taj uslov uopšte može biti tačan je tek nakon što Proximity mjerenje završi. Od tog trenutka pa do završetka ALS mjerenja u sledećem ciklusu podaci u registrima ostaju iz istog ciklusa,
 prema tome treba da biramo vrijeme *polling*-a:  
 ```text
-POLL_TIME_US_ms + I2C_CYCLE_WORST_CASE_TIME_ms < ATIME_ms_min + WTIME_ms_min 
+POLL_TIME_ms + I2C_CYCLE_WORST_CASE_TIME_ms < ATIME_ms_min + WTIME_ms_min 
 ```
-jer nam ovaj uslov omogućava da ALS i Proximity rezultati mjerenja budu iz istog integracionog ciklusa.  
+jer nam ovaj uslov omogućava da *ALS* i *Proximity* rezultati mjerenja budu iz istog integracionog ciklusa, kao i da nijedan ciklus mjerenja neće biti propušten.   
 Prilikom odabira vrijednosti *POLL_TIME_US* potrebno je uzeti u obzir da korak za *ATIME/WTIME* može da se nalazi u sledećem opsegu:  
 *Integration time step size(2.68 - 2.90) ms Typical value 2.78ms*  i mi treba da koristimo minimalnu vrijednost *2.68ms* pri proračunu.  
 
@@ -182,17 +182,20 @@ Dijagram mašine stanja senzora:[TMD3725 datasheet - State Diagram](https://look
 ## I2C Komunikacija
 
 U *datasheet*-u senzora možemo da pronađemo sledeću strukturu za I2C upise/čitanja:     
-*A Write transaction consists of a START, CHIP-ADDRESS-WRITE, REGISTER-ADDRESS, DATA BYTE(S), and STOP.*  
-*A Read transaction consists of a START, CHIP-ADDRESS-WRITE, REGISTER-ADDRESS, START, CHIP-ADDRESS-READ, DATA BYTE(S), and STOP.*   
-
+```text
+A Write transaction consists of a START, CHIP-ADDRESS-WRITE, REGISTER-ADDRESS, DATA BYTE(S), and STOP. 
+A Read transaction consists of a START, CHIP-ADDRESS-WRITE, REGISTER-ADDRESS, START, CHIP-ADDRESS-READ, DATA BYTE(S), and STOP. 
+```
 Ovo ćemo implementirati pomoću *ioctl* sistemskog poziva sa *I2C_RDWR* flegom.    
 *Read* transakciju implementiramo sa 2 *i2c_msg* poruke, gdje prva upisuje adresu registra iz kojeg čitamo a druga čita zahtjevani broj bajtova, između njih se nalazi *START(repeated-start)*.  
 *Write* transakciju implementiramo sa 1 *i2c_msg* porukom u kojoj se nalazi adresa i bajt koji tu pišemo, nakon ovoga slijedi *STOP*, *repeated-start* ovdje nije potreban.  
 
 Dodatno bitno je izdvojiti:        
-*Internal to the device, an 8-bit buffer stores the register address location of the desired byte to read or write. This buffer   
+```text
+Internal to the device, an 8-bit buffer stores the register address location of the desired byte to read or write. This buffer   
 auto-increments upon each byte transfer and is retained between transaction events (i.e. valid even after the master   
-issues a STOP command and the I²C bus is released).*     
+issues a STOP command and the I²C bus is released).
+```   
 Dakle postoji interni bufer u kojem ostaje adresa registra posljednje transakcije, ovo praktično znači da prilikom *Read* možemo da izostavimo prvi *i2c_msg* koji upisuje adresu registra ukoliko je prethodna transakcija postavila interni bafer na adresu sa koje želimo da čitamo. Npr. ovo bi teoretski značilo da bi se *Read* mogao implementirati i bez *repeated-start* formata sa *write+STOP+read*.  
 
 Ukoliko je *POLL_TIME_US* vrijeme izabrano adekvatno(blizu ali manje od *ATIME_ms_min + WTIME_ms_min*) možemo da očekujemo maksimalno 2 *poll*-a po ciklusu, tako da umjesto čitanja samo *STATUS* registra(1 bajt) a zatim kada je uslov ispunjen čitanja svih registara vezanih za mjerenje(9 bajt-ova), možemo jednostavno da čitamo svih 10 bajtova u jednom *ioctl* sistemskom pozivu.  
