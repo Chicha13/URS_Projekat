@@ -166,7 +166,7 @@ Mi ćemo raditi periodičan *polling* sa uslovom da su oba mjerenja(Proximity i 
 Pošto naš uslov zahtijeva da su oba flag-a (*AINT* i *PINT*) već postavljena da bi se *poll* smatrao uspješnim, prvi trenutak kada taj uslov uopšte može biti tačan je tek nakon što Proximity mjerenje završi. Od tog trenutka pa do završetka ALS mjerenja u sledećem ciklusu podaci u registrima ostaju iz istog ciklusa,
 prema tome treba da biramo vrijeme *polling*-a:  
 ```text
-POLL_TIME_US < ATIME_ms_min + WTIME_ms_min 
+POLL_TIME_US_ms + I2C_CYCLE_WORST_CASE_TIME_ms < ATIME_ms_min + WTIME_ms_min 
 ```
 jer nam ovaj uslov omogućava da ALS i Proximity rezultati mjerenja budu iz istog integracionog ciklusa.  
 Prilikom odabira vrijednosti *POLL_TIME_US* potrebno je uzeti u obzir da korak za *ATIME/WTIME* može da se nalazi u sledećem opsegu:  
@@ -181,7 +181,7 @@ Dijagram mašine stanja senzora:[TMD3725 datasheet - State Diagram](https://look
 
 ## I2C Komunikacija
 
-U datasheet-u senzora možemo da nađemo sledeću struktru za I2C upise/čitanja:     
+U *datasheet*-u senzora možemo da pronađemo sledeću strukturu za I2C upise/čitanja:     
 *A Write transaction consists of a START, CHIP-ADDRESS-WRITE, REGISTER-ADDRESS, DATA BYTE(S), and STOP.*  
 *A Read transaction consists of a START, CHIP-ADDRESS-WRITE, REGISTER-ADDRESS, START, CHIP-ADDRESS-READ, DATA BYTE(S), and STOP.*   
 
@@ -195,8 +195,8 @@ auto-increments upon each byte transfer and is retained between transaction even
 issues a STOP command and the I²C bus is released).*     
 Dakle postoji interni bufer u kojem ostaje adresa registra posljednje transakcije, ovo praktično znači da prilikom *Read* možemo da izostavimo prvi *i2c_msg* koji upisuje adresu registra ukoliko je prethodna transakcija postavila interni bafer na adresu sa koje želimo da čitamo. Npr. ovo bi teoretski značilo da bi se *Read* mogao implementirati i bez *repeated-start* formata sa *write+STOP+read*.  
 
-Ukoliko je *POLL_TIME_US* vrijeme izabrano adekvatno(blizu ali manje od *ATIME_ms_min + WTIME_ms_min*) možemo da očekujemo maksimalno 2 *poll*-a po ciklusu tako da umjesto čitanja samo *STATUS* registra(1 bajt) a zatim kada je uslov ispunjen čitanja svih registara vezanih za mjerenje(9 bajt-ova) možemo jednostavno da čitamo svih 10 bajtova u jednom *ioctl* sistemskom pozivu.  
-Najgori slučaj za ciklus bi nam tada bio:  
+Ukoliko je *POLL_TIME_US* vrijeme izabrano adekvatno(blizu ali manje od *ATIME_ms_min + WTIME_ms_min*) možemo da očekujemo maksimalno 2 *poll*-a po ciklusu, tako da umjesto čitanja samo *STATUS* registra(1 bajt) a zatim kada je uslov ispunjen čitanja svih registara vezanih za mjerenje(9 bajt-ova), možemo jednostavno da čitamo svih 10 bajtova u jednom *ioctl* sistemskom pozivu.  
+Najgori slučaj *polling*-a za ciklus bi nam tada bio:  
 ```text
 ioctl 10-byte read   (STATUS+measurement data)
 ioctl 10-byte read   (STATUS+measurement data)
@@ -207,7 +207,7 @@ ioctl 1-byte read   (STATUS)
 ioctl 1-byte read   (STATUS)
 ioctl 9-byte read   (measurement data)
 ```
-Dodatno svi ovi registri se nalaze na sekvencijalnim adresama te je ovako potreban samo jedan upis adrese registra na početku transakcije, i osiguravamo atomičnost na nivou I2C bus-a.
+Dodatno svi ovi registri se nalaze na sekvencijalnim adresama te je ovako potreban samo jedan upis adrese registra na početku transakcije, takođe osiguravamo atomičnost na nivou I2C bus-a.
 
 *TMD37253* Senzor može da koristi *Standard(100kHz)/Fast(400kHz)* *I2C* modove.  
 [Light-mix-sens-click](https://download.mikroe.com/documents/add-on-boards/click/light_mix-sens_click/light-mix-sens-click-schematic-v100.pdf) pločica na svojim vanjskim *SDA/SCL* pinovima sadrži *pull-up* otpornike od po 4.7kΩ spojene na 3.3V, na ove pinove ćemo povezivati *I2C2* *SDA/SCL* pinove koji se nalaze na *GPIO_1* konektoru na našoj razvojnoj ploči.  
@@ -216,7 +216,7 @@ Dodatno svi ovi registri se nalaze na sekvencijalnim adresama te je ovako potreb
 ```text
 tr ~ 0.8473 x Rp x Cb
 ```
-odavde dobijamo maksimalnu kapacitivnost magistrale za dva podržana moda *I2C* komunikacije  
+iz ovoga dobijamo maksimalnu kapacitivnost magistrale za dva podržana moda *I2C* komunikacije  
 Za *Standard(100kHz)* mod:
 ```text
 Cb_max = 1000ns / (0.8473 x 4700Ω) = 251pF
@@ -226,13 +226,13 @@ Za *Fast(400kHz)* mod:
 Cb_max = 300ns / (0.8473 × 4700Ω) = 75pF
 ```    
 Pri tome kapacitivnost magistrale se mijenja u zavisnosti od *jumpera* koje koristimo za povezivanje pinova.    
-Ukoliko uzmemo u obzir najgoru moguću transakciju, ona se sastoji iz:   
+Ukoliko uzmemo u obzir najgoru moguću I2C transakciju za ciklus, ona se sastoji iz:   
 ```text
 2x ioctl 10-byte read   (STATUS+measurement data)
 3x ioctl 1-byte write   (AGAIN adjustment)
 ioctl 1-byte write 		(STATUS register clear)
 ```  
-Za *Standard mode* ovo traje ~3.56ms u odnosu na ~0.89ms za *Fast mode*, ovo vrijeme se nadovezuje na *POLL_TIME_US* i treba ga uzeti u obzir pri odabiru istog.  
+Za *Standard mode* ovo se izvršava ~3.56ms u odnosu na ~0.89ms za *Fast mode*, ovo vrijeme se nadovezuje na *POLL_TIME_US* i treba ga uzeti u obzir pri odabiru istog.  
 S obzirom da za praktična vremena *ATIME+WTIME* npr. default vrijednosti *171.5ms+241.2ms >> 3.56ms* prihvatljivo je da koristimo *Standard mode* u svrhu povećanja potencijalne otpornosti na efekte parazitne kapacitivnosti na *tr*.  
 
 Prema tome u *.dts* treba da se nalazi:
