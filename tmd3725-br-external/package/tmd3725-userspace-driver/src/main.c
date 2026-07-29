@@ -75,7 +75,7 @@ int main(void) {
         .pcfg1 = 0x4D,
         .wtime = 0x59,
         .poll_time_us = 400000,
-        .prox_det_thresh = 60,
+        .prox_det_thresh = 80,
         .prox_emp_thresh = 30
     };
     uint8_t sensor_id = 0;

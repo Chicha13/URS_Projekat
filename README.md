@@ -258,3 +258,56 @@ Ukoliko izvršimo *probe* operaciju na *I2C-1* busu (hardverski *I2C-2*) dobijam
 Naš senzor je detektovan na adresi *0x39*, prema tome možemo da ostvarimo komunikaciju otvaranjem */dev/i2c-1* i izvršavanjem I2C transakcija pomoću *ioctl* sistemskih poziva. 
 Da je postojao *kernel driver* vezan za ovu adresu, umjesto *39* vidjeli bismo *UU* (*Used*) - ovo bi značilo da *i2cdetect* prepoznaje da adresu već koristi neki kernel drajver, pa uopšte ne šalje *probe* na tu adresu, nego samo prijavljuje da je zauzeta.
 
+## Proximity Mjerenje
+
+Prije samog mjerenja potrebno je ukloniti optički i električni *crosstalk*, koji uzrokuje da vrijednost *PDATA* ne bude nula kada nema mete ispred senzora.  
+Ovo se radi upisivanjem vrijednosti u *POFFSETL(magnitude)/POFFSETH(sign)* registre koji predstavljaju vrijednost *offseta* sa kojim se modifikuje *PDATA* u svakom ciklusu, maksimalna/minimalna vrijednost *offseta* je +255/-255. Senzor *TMD37253* podržava funkcionalnost automatske hardverske kalibracije, koja sama upisuje adekvatne vrijednosti u ove registre.  
+
+U praksi ne želimo da imamo *PDATA*=0 jer ne možemo da razlikujemo slučaj kada je ova vrijednost zapravo nula u odnosu na negativna(npr. *crosstalk* se promijenio a vrijednost *PDATA* modifikujemo sa istim *offset*-om).    
+Registar *CALIBCFG* ([TMD3725 datasheet - CALIBCFG registar](https://look.ams-osram.com/m/6a4d0816b7d3a4bf/original/TMD3725-ALS-Color-and-Proximity-Sensor-Module.pdf#page=40)) sadrži funkcionalnosti:   
+- *BINSRCH_TARGET* - ciljna *PDATA* vrijednost koju kalibracija pokušava postići podešavanjem vrijednosti u *POFFSETL/H*, koristićemo *BINSRCH_TARGET*=4 (target *PDATA*=15).  
+- *AUTO_OFFSET_ADJ* - kada je postavljena opcija automatski dekrementira *POFFSETL* kad god *PDATA* padne na 0, koristićemo ovu opciju.
+- *PROX_AVG* - Određuje koliko mjerenja će se izvršiti u okviru jednog ciklusa, rezultat koji se upisuje u *PDATA* je srednja vrijednost ovih mjerenja. Ovo smanjuje šum ali produžava trajanje *Proximity* ciklusa i povećava potrošnju, koristićemo *PROX_AVG*=2 (4 mjerenja).
+ 
+Kalibracija je implementirana pomoću funkcije *TMD3725.c:tmd3725_calibrate_offset()* i s obzirom da na optički/električni *crosstalk* najvećim dijelom utiču statične karakteristike same pločice na kojoj se senzor nalazi, kalibraciju ćemo raditi samo jednom na samom početku aplikacione logike prilikom faze podešavanja senzora.  
+Prilikom postupka kalibracije potrebno je da interni oscilator bude uključen *PON=1*, te da prostor ispred senzora bude prazan.  
+
+Karakteristike koje utiču na vrijednost *PDATA* za istu metu i udaljenost:  
+- *PLDRIVE* - Kontroliše jačinu struje koja pokreće *IR LED* diodu(emiter), povećavanjem vrijednosti dobijamo veći *PDATA*, šum ostaje isti, potrošnja raste.  
+- *PGAIN* - Podešava pojačanje *IR* fotodiode(prijemnik), povećavanjem vrijednosti dobijamo veći *PDATA* ali i šum, potrošnja ostaje ista.  
+- *PPULSE* - Definiše maksimalan broj emitovanih *IR LED* impulsa za jedno mjerenje, povećavanjem vrijednosti dobijamo veći *PDATA* ali i šum i potrošnju.
+- *PPULSE_LEN* - Definiše trajanje jednog impulsa u okviru mjerenja, povećavanjem vrijednosti dobijamo veći *PDATA* i potrošnju dok šum ostaje isti.
+
+Dakle povećavanje ovih parametara ima sledeći efekat: 
+| Parametar | PDATA | Šum | Potrošnja |
+| :--- | :---: | :---: | :---: |
+| **PLDRIVE** | ↗ | = | ↗ |
+| **PGAIN** | ↗ | ↗ | = |
+| **PPULSE** | ↗ | ↗ | ↗ |
+| **PPULSE_LEN** | ↗ | = | ↗ |
+
+Primjer iz *datasheet*-a senzora gdje se mijenjaju vrijednosti *PGAIN* and *PPULSE_LEN*, za iste vrijednosti *PLDRIVE* i *PPULSE*:
+![TMD3725_datasheet_figure15](figs/TMD3725_datasheet_figure15.png)
+
+
+U pratećem materijalu za *Proximity* mjerenje koje *AMS* navodi u *Application note* za naš senzor [ProximitySensors-AN000556.pdf](https://look.ams-osram.com/m/64e4692f8dedb844/original/ProximitySensors-AN000556.pdf) možemo da pronađemo sledeće preporuke:
+
+Za pojačanje signala tj. ukoliko nam je potrebna veća vrijednost *PDATA*, preporučuje se povećanje *PLDRIVE* ili *PPULSE_LEN* s obzirom da u ovom slučaju šum ostaje isti.  
+Za smanjenje šuma potrebno je smanjiti *PGAIN* ili *PPULSE* a kao kompenzaciju proporcionalno povećati *PPULSE_LEN* ili *PLDRIVE*.  
+
+Prisustvo objekta se određuje poređenjem vrijednosti *PDATA* sa dva praga: *detection_pdata_threshold* i *empty_pdata_threshold*. Ova dva praga formiraju histerezu, stanje detekcije se mijenja samo pri prelasku *PDATA* vrijednosti preko jednog od pragova, dok vrijednosti između njih ne mijenjaju trenutno stanje.  
+Vrijednosti ova dva praga određuju se empirijski, mjerenjem *PDATA* na ciljnim *detect* i *release* udaljenostima uz konkretnu metu (npr. ruka).  
+Parametre *Proximity* mjerenja je potrebno modifikovati na opisani način sve dok nemamo postavljene pragove uz adekvatnu marginu između istih.
+Dodatno potrebno je napomenuti da vrijednosti *PDATA* koje dobijamo za dva objekta na istoj distanci mogu da značajno variraju i zavise od *IR* reflektivnosti datog objekta.
+
+Parametri *PLDRIVE/PGAIN/PPULSE/PPULSE_LEN/detection_pdata_threshold/empty_pdata_threshold* mogu se modifikovati u konfiguracionom fajlu */etc/tmd3725.conf*, nakon što su učitane prilikom inicijalizacije ove vrijednosti ostaju fiksne za vrijeme izvršavanja aplikacije.  
+Trenutne *default* vrijednosti su postavljene u svrhu detekcije otvorenog dlana sa pragom detekcije *detection_pdata_threshold*=80 (udaljenost ~5cm) i pragom otpuštanja *empty_pdata_threshold*=30 (udaljenost ~10cm).
+
+Optičke karakteristike vezane za *Proximity* mjerenje su dostupne u sledećoj tabeli [TMD3725 datasheet - Proximity Optical Characteristics](https://look.ams-osram.com/m/6a4d0816b7d3a4bf/original/TMD3725-ALS-Color-and-Proximity-Sensor-Module.pdf#page=9), bitno je uzeti u obzir:
+- *Part to part variation* - koji nam govori da je varijacija između različitih instanci ovog senzora za mjerenje iste mete i udaljenosti *75 - 125 %*, prema tome pragovi treba da budu postavljeni prema specifičnoj instanci senzora.  
+- *Response, no target after optical calibration* - govori da *PDATA* vrijednost izmjerena bez mete nakon izvršene optičke kalibracije može da varira u opsegu 0-12 *counts*, ovo uzimamo u obzir pri izboru *BINSRCH_TARGET*=4 (*PDATA*=15) vrijednosti veće od 12 tako da *PDATA* ne može da bude 0 nakon kalibracije.
+
+*PSAT_REFLECTIVE* je saturacija koja nastaje tokom *IR LED active* dijela *Proximity* ciklusa, dakle nastaje kao rezultat odbijenog signala od objekta ispred senzora i može se smatrati da je objekat detektovan.  
+*PSAT_AMBIENT* je saturacija koja nastaje tokom *IR LED inactive* dijela *Proximity* ciklusa, dakle nastaje kao rezultat *IR* sadržaja svijetlosti okoline koja pada na senzor, u ovom slučaju mjerenje se smatra nevalidnim.   
+S obzirom da u *datasheet*-u senzora nisu pronađene informacije o tome da li se za ova dva slučaja saturacije postavlja *PINT* fleg na kraju *Proximity* mjerenja, kao uslov završetka istog uzimamo *PINT|PSAT_REFLECTIVE|PSAT_AMBIENT*.  
+
