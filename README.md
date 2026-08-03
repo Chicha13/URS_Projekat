@@ -314,3 +314,192 @@ Optičke karakteristike vezane za *Proximity* mjerenje su dostupne u sledećoj t
 *PSAT_AMBIENT* je saturacija koja nastaje tokom *IR LED inactive* dijela *Proximity* ciklusa, dakle nastaje kao rezultat *IR* sadržaja svijetlosti okoline koja pada na senzor, u ovom slučaju mjerenje se smatra nevalidnim.   
 S obzirom da u *datasheet*-u senzora nisu pronađene informacije o tome da li se za ova dva slučaja saturacije postavlja *PINT* fleg na kraju *Proximity* mjerenja, kao uslov završetka istog uzimamo *PINT|PSAT_REFLECTIVE|PSAT_AMBIENT*.  
 
+## ALS Mjerenje
+
+Važno je napomenuti da, za razliku od spektrometra, *ALS* mjerenje predstavlja samo aproksimaciju hromatskog spektra svjetlosti.  
+Svaki kanal integriše svjetlost koja prođe kroz njegov optički filtar u jednu digitalnu vrijednost, te se gubi informacija o tome kako je ta svjetlost bila raspoređena po talasnim dužinama unutar propusnog opsega filtra.  
+Prema tome dva potpuno različita spektralna sastava svjetlosti mogu dati identičan *RGBC* odziv na senzoru.  
+
+Dva osnovna parametra koja određuju kako senzor za vrijeme *ALS* mjerenja prikuplja podatke:  
+**ATIME** - Integraciono vrijeme senzora, odnosno trajanje perioda tokom kojeg senzor akumulira svjetlost prije nego što se odrede digitalne vrijednosti mjerenja. Duže integraciono vrijeme znači da se svjetlost prikuplja kroz duži period, što daje veću vrijednost *digital counts* za istu jačinu ambijentalne svjetlosti, te povećava rizik od digitalne saturacije.     Vrijeme *ATIME* određuje maksimalnu moguću vrijednost *digital counts* za *ALS* mjerenje, ukoliko je *ATIME*<63 puni opseg 16 bitnih registara će biti nedostižan.
+
+**AGAIN** - Analogno pojačanje senzora, određuje vrijednost sa kojom se pojačava fotostruja u *analog front-end (AFE)*. Veće pojačanje povećava osjetljivost senzora na slabu svjetlost, ali uz veći rizik od analogne/digitalne saturacije.  
+
+Prema tome isto svjetlo izmjereno sa drugačijim *ATIME/AGAIN* podešavanjima daje različite *RGBC* vrijednosti.  
+
+Analogna saturacija nastaje kada je analogna vrijednost koja se dobija nakon pojačavanja fotostruje previše velika da bi bila akumulirana prilikom *light-to-frequency* procesa, prilikom nastanka ove vrste saturacije postaviće se *ASAT* bit u status registru.  
+Digitalna saturacija nastaje kada vrijednost *clear channel count* pređe maksimalnu moguću vrijednost 16 bitnog registra *65535*.  
+Provjeru na saturaciju ćemo vršiti poređenjem trenutne vrijednosti *clear channel count* sa pragom na sledeći način:
+- Za *ATIME ≤ 63* prag postavljamo na 75% maksimalnog mogućeg za dati *ATIME*, ovo radimo jer za kratka integraciona vremena *ripple* signala uzrokuje da stvarni intenzitet svjetlosti potencijalno neće biti uhvaćen.
+- Za *ATIME > 63* prag je *65535*, jer će u ovoj oblasti najvjerovatnije nastati digitalna saturacija ukoliko je svjetlo dovoljno snažno.
+ 
+Kada trenutno analogno pojačanje *AGAIN* više nije adekvatno za uslove osvetljenja, potrebno ga je dinamički prilagoditi u svrhu poboljšanja preciznosti ili sprečavanja saturacije.
+Ovo radimo implementacijom *Auto-Gain* funkcionalnosti tako da ukoliko je vrijednost *clear channel counts* manja od 15% maksimalne moguće za vrijednost *ATIME*, tada povećavamo *AGAIN*,
+suprotno ukoliko je vrijednost veća od 75% maksimalne moguće tada smanjujemo *AGAIN* u cilju izbjegavanja saturacije. Logika *Auto-Gain* je implementirana funkcijom *TMD3725.c:‎tmd3725_adjust_again()*. S obzirom na to da u *datasheet*-u senzora nije opisan *Auto-Zero (AZ)* mehanizam vezan za *ALS* mjerenje, niti kada ga je potrebno koristiti, mi ćemo ovaj mehanizam pokretati pri inicijalnom podešavanju senzora, kao i pri svakoj promjeni vrijednosti *AGAIN*.  
+
+Nama su od interesa sledeće veličine:
+- *Lux* - Procjena intenziteta izmjerene svjetlosti u odnosu na osjetljivost ljudskog oka(Fotometrijska procjena).
+- *CIE(x,y)* - Predstavlja hromatske koordinate koje opisuju nijansu i saturaciju(zasićenje) svjetlosti, nezavisno od intenziteta iste.
+- *CT (Color Temperature)* - je temperatura u kelvinima na koju bi neko idealno teoretsko crno tijelo(*blackbody*) trebalo da bude zagrijano da emituje tu boju svjetlosti, *CT* se odnosi na *Planckian* izvore svjetlosti npr. sunce, inkandescentna sijalica itd.
+*CCT (Correlated Color Temperature)* je proširenje ovog koncepta tako da se uključe izvori koji ne proizvode svijetlost zagrijavanjem(npr. LED) i predstavlja temperaturu onog crnog tijela čija je boja svjetlosti najsličnija boji posmatranog izvora. Važno je napomenuti da je *CCT* smislena samo za svjetlosti koje su u blizini *Planckian locus*-a tj. za bijele neutralne svijetlosti.  
+
+U *AMS*-ovom ([TMD3725 EVM Users Guide.pdf](https://www.mouser.com/catalog/specsheets/ams_04022019_TMD3725%20EVM%20Users%20Guide.pdf)) *Userguide*-u za senzor možemo da pronađemo sledeće parametre:
+```text
+DGF         	  682.85  // Device and Glass Factor(combined Glass Attenuation (GA) * Device Factor (DF))
+C_COEF        		0.16  // Clear channel coefficient for Lux calculation
+R_COEF       	   -0.04  // Red channel coefficient for Lux calculation
+G_COEF        		0.16  // Green channel coefficient for Lux calculation
+B_COEF       	   -0.29  // Blue channel coefficient for Lux calculation
+CT_COEF    		    4520  // CCT (Correlated Color Temperature) calculation multiplier
+CT_OFFSET   	    1804  // CCT calculation offset
+```
+koji predstavljaju *open-air*(bez zaštitnog stakla) koeficijente za naš senzor i koriste se za računanje nivoa osvjetljenosti(*Lux*) u luxima i korelisane temperature boje(*CCT*) u kelvinima.
+
+
+Za analizu rezultata *ALS* mjerenja i proračun vrijednosti koje su nam od interesa sem *datasheet*-a senzora korišteni su i sledeći prateći materijali koje *AMS* navodi u *Application note* za naš senzor:
+- [LightSensors-AN000519.pdf](https://look.ams-osram.com/asset/f316cb88-c05f-4933-98ea-d0341b59e69e/LightSensors-AN000519.pdf) 
+- [ColorProxDetect-AN000520.pdf](https://look.ams-osram.com/m/dff117778e5dd00/original/ColorProxDetect-AN000520.pdf)
+- [ColorProxDetect-AN000260.pdf](https://look.ams-osram.com/m/67d3521c2f532117/original/ColorProxDetect-AN000260.pdf)
+
+U [ColorProxDetect-AN000520.pdf](https://look.ams-osram.com/m/dff117778e5dd00/original/ColorProxDetect-AN000520.pdf) možemo da pronađemo sledeću proceduru računanja *Lux* i *CCT*:
+
+```text
+IR Rejection to be applied on raw Spectral Response values:
+IR = (R+G+B-C) / 2
+
+IR compensated channels:
+R’ = R – IR
+G’ = G – IR
+B’ = B – IR
+C’ = C – IR
+
+Lux calculation:
+G” = R_Coef * R’ + G_Coef * G’ + B_Coef * B’
+CPL = (ATIME_ms * AGAINx) / (GA * DF) = (ATIME_ms * AGAINx)/DGF
+Lux = G” / CPL
+
+Color temperature(CT) calculation:
+CT = CT_Coef * B’ / R’ + CT_Offset
+```
+Ukoliko uporedimo spektralni odziv senzora *TCS3772* koji je korišten u referentnom materijalu i spektralni odziv *TMD37253*:
+<table>
+  <tr>
+    <td width="50%">
+      <img src="figs/TCS3772_spectral_response.png" alt="TCS3772 Spectral Responsivity " width="100%"/>
+    </td>
+    <td width="50%">
+      <img src="figs/TMD3725_spectral_response.png" alt="TMD3725 Spectral Response" width="100%"/>
+    </td>
+  </tr>
+</table>
+
+možemo da vidimo da naš senzor ima značajno bolje *IR* blokirajuće filtre na svojim *RGBC* fotodiodama, prema tome možemo da izostavimo postupak *IR* kompenzacije.
+Takođe pri korištenju *IR = (R+G+B-C)/2* potrebno je uzeti u obzir da ovaj princip *IR* kompenzacije pretpostavlja *R+G+B≈C* što je gruba aproksimacija koja
+nije nužno tačna, te ovime oduzimamo i stvarne *RBGC* vrijednosti. Pod pretpostavkom da su koeficijenti kalibrisani prema specifičnim preklapanjima kanala, *IR* kompenzacijom
+možemo potencijalno da unesemo grešku u naše mjerenje.  
+
+Dodatno računanjem *Lux*-a pomoću formule iz referentnog materijala tj. korištenjem samo *R_Coef,G_Coef,B_Coef* dobijamo negativne vrijednosti, prema tome pretpostavka je da je potrebno
+dodati i *C_Coef* u proračun:  
+```text
+CPL = (ATIME_ms * AGAINx)/DGF
+Lux = (R_Coef * R_raw + G_Coef * G_raw + B_Coef * B_raw + C_Coef * C_raw) / CPL
+```
+
+*CIE 1931 Diagram 2D/3D*:
+<table>
+  <tr>
+    <td width="50%">
+      <img src="figs/CIE_diagram_2D.png" alt="CIE 2D Diagram" width="100%"/>
+    </td>
+    <td width="50%">
+      <img src="figs/CIE_diagram_3D.png" alt="CIE 3D Diagram" width="100%"/>
+    </td>
+  </tr>
+</table>
+
+Svjetlost je u potpunosti određena svojom hromatičnošću i intenzitetom, dakle *xyY* zajedno definišu potpunu boju svjetlosti, npr.:  
+*x=0.33 y=0.33* za *Y=0* predstavlja čisto crnu boju, kada povećavamo *Y* dobijamo sivu, za *Y=1* ovo će biti čista bijela boja.  
+Ako se *x,y* ravan posmatra u polarnim koordinatama oko neutralne tačke *(x≈0.33, y≈0.33)*: 
+- *Saturation* - Odgovara radijusu tj. udaljenosti od neutralne tačke ka ivici (spektralnoj granici) dijagrama, opisuje koliko je boja 
+  zasićena naspram neutralne.  
+- *Hue* - Odgovara uglu na kružnici koju formira radijus, određuje nijansu boje (crvena, zelena, plava itd.).
+  
+U [LightSensors-AN000519.pdf](https://look.ams-osram.com/asset/f316cb88-c05f-4933-98ea-d0341b59e69e/LightSensors-AN000519.pdf) možemo da pronađemo sledeći postupak računanja *(x,y)* i *CCT*:
+```text
+CIE Tristimulus(imaginary primaries) values X, Y, and Z calculation:
+X = k·Σ Φ(λ) · x̄(λ) · Δλ
+Y = k·Σ Φ(λ) · ȳ(λ) · Δλ
+Z = k·Σ Φ(λ) · z̄(λ) · Δλ
+where
+- Φ(λ is the spectral power distribution of the measured light
+- x̄(λ), ȳ(λ), z̄(λ) are the CIE 1931 color matching functions
+- Δλ is the wavelength interval
+- k is a normalization factor
+
+CIE 1931 chromaticity diagram coordinates calculation:
+x = X / (X + Y + Z)
+y = Y / (X + Y + Z)
+
+McCamy (1992) equation for calculating the CCT of a light source:
+n = (x - 0.3320) / (0.1858 - y)
+CCT = 449.0·n³ + 3525.0·n² + 6823.3·n + 5520.33
+
+McCamy's equation provides very good accuracy for chromaticities lying within approximately ±0.02 (x,y) of the Planckian locus
+```
+
+U našem slučaju, pošto *RGBC* senzor ne mjeri pun spektar *Φ(λ)* nego samo četiri integrisane vrijednosti, *XYZ* se procjenjuju primjenom linearne transformacije nad vrijednostima *RGBC* kanala.
+Koeficijenti transformacije određuju se empirijskom kalibracijom u odnosu na spektralni odziv specifičnog senzora, npr. koeficijenti za senzor *TCS34725*:  
+```text
+X = (-0.14282F * r) + (1.54924F * g) + (-0.95641F * b);  
+Y = (-0.32466F * r) + (1.57837F * g) + (-0.73191F * b);  
+Z = (-0.68202F * r) + (0.77073F * g) + (0.56332F * b);  
+```
+Međutim ovakvi koeficijenti nisu dostupni za naš senzor, prema tome potrebno je pronaći alternativni način za određivanje hromatičnosti.
+
+S obzirom da ne možemo da koristimo *McCamy* postupak računanja *CCT*, koristićemo prethodno definisanu aproksimaciju koja koristi koeficijente iz *Useguide*, pri čemu ćemo kao i pri proračunu *Lux*-a koristiti sirove vrijednosti *RGBC* bez *IR* kompenzacije:
+```text
+CT = CT_Coef * B_raw / R_raw + CT_Offset
+```
+Za određivanje hromatskih koordinata *(x,y)* možemo da koristimo inverzni postupak *Kang, Moon, Hong, Lee, Cho and Kim (2002) method* kojim ćemo da dobijemo *(x,y)* iz prethodno izračunate vrijednosti *CCT*. Ograničenje ovog postupka je da će dobijene vrijednosti *(x,y)* uvijek da se nalaze na *Planckian locus*-u jer je *CCT -> CIE (x,y)* jednoznačna transformacija dok obrnuto nije slučaj.  
+Kao što je već rečeno *CCT* ovde ima smisla računati samo za svjetla koja nisu saturirana.
+
+*Color Saturation* ćemo odrediti prema [ColorProxDetect-AN000520.pdf](https://look.ams-osram.com/m/dff117778e5dd00/original/ColorProxDetect-AN000520.pdf#page=10) na sledeći način:
+```text
+As the color becomes saturated, the lux and CT estimates become less accurate. To determine 
+when this happens, a calculation of color saturation can be used to determine this condition and then 
+the CT results can be ignored or other methods of calculation can be utilized.
+The following can be used to determine saturation:
+
+M = max (R”, G”, B”) 
+m = min (R”, G”, B”) 
+Saturation = (M – m) / M
+
+For white light, R”~G”~B” and M – m is small and (M – m) / M is smaller. For saturated light, M – m is 
+large and if (M – m) / M > 0.75, the light source is starting to saturate. 
+```
+gdje ćemo takođe koristiti sirove vrijednosti *RGB*.
+
+*Hue*, koji predstavlja nijansu boje, ćemo računati prema aproksimaciji standardne *RGB* u *HSV* konverzije:
+```text
+M = max(R, G, B)
+m = min(R, G, B)
+C = M - m
+
+          ⎧ undefined,                if C = 0
+          │
+          │ (G - B) / C mod 6,        if M = R
+H' =      │
+          │ (B - R) / C + 2,          if M = G
+          │
+          ⎩ (R - G) / C + 4,          if M = B
+
+H = 60° × H'
+```
+Gdje *Hue* ima najviše smisla za saturirana svjetla, za neutralna svjetla *C = M - m* može da bude 0(čisto neutralno) ili da izaziva velike varijacije u vrijednosti, geometrijski ovaj ugao nema smisla za čisto neutralnu svijetlost(x=0.33, y=0.33) jer je radijus(saturacija) koji formira kružnicu po kojoj se *Hue* kreće sada 0.
+
+Dakle za neutralna svjetla relevantne informacije dobijamo iz vrijednosti *CCT* i inverznog postupka *CCT -> CIE (x,y)*, dok nam *Hue* ovde potencijalno daje nesmislenu vrijednost.
+Za zasićena(saturirana) svjetla *CCT* i prema tome *CCT -> CIE (x,y)* nemaju smisleno značenje, dok nam *Hue* i *Color Saturation* daju informaciju o hromatičnosti svjetlosti.
+
+Opcija *IR_TO_GREEN=1* multipleksira *Green* *ADC* kanal prema *IR* fotodiodi tako da će u ovom slučaju biti izmjeren *IR* sadržaj svjetlosti i rezultat mjerenja upisan u *GDATAL/GDATAH* registre, dok zelena fotodioda uopšte neće biti uključena. Za ovo mjerenje je potreban jedan čitav odvojen integracioni ciklus prilikom kojeg dakle ne bismo imali mjerenje dijela spektra svjetlosti koji odgovara zelenoj komponenti. Ovo potencijalno može da se koristi prilikom određivanja vrste izvora svjetlosti prema odnosu *IR/CLEAR* (npr. LED sijalica ima relativno mali *IR* sadržaj dok inkandescentna sijalica ima značajno veći). Dodatno informaciju o količini *IR* bi mogli da koristimo ukoliko bismo ipak željeli da radimo *IR* kompenzaciju nad *RGBC* vrijednostima(za određeni prag *IR/CLEAR*), ova opcija nije korištena s obzirom da zahtjeva čitav odvojen integracioni ciklus.  
+
+S obzirom da u *datasheet*-u senzora nisu pronađene informacije o tome da li se za slučaj *ASAT* saturacije postavlja *AINT* fleg na kraju *ALS* mjerenja, kao uslov završetka istog uzimamo *AINT|ASAT*.
