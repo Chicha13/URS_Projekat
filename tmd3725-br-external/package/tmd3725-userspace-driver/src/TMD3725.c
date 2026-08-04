@@ -102,6 +102,7 @@ int check_saturation(uint16_t rawc)
  * Returns file descriptor, or -1 if open() failed
  * ================================================================ */
 int tmd3725_init(const char *i2c_device) {
+    if (!i2c_device) return -1;
     int fd = open(i2c_device, O_RDWR);
     if (fd < 0) {
         perror("[TMD3725][Error] Unsuccessful in opening the I2C bus");
@@ -114,11 +115,21 @@ int tmd3725_init(const char *i2c_device) {
  * Attempts to verify the expected ID of the TMD37253 sensor (0xE4)
  * Returns 0 if successful, -1 if the ID is wrong or an error has occured
  * ================================================================ */
-int tmd3725_verify_id(int fd, uint8_t *out_id) {
+int tmd3725_verify_id(int fd) {
     uint8_t id = 0;
-    if (tmd3725_read_reg(fd, TMD3725_REG_ID, &id, 1) < 0) return -1;
-    if (out_id) *out_id = id;
-    return (id == TMD3725_DEVICE_ID) ? 0 : -1;
+    if (tmd3725_read_reg(fd, TMD3725_REG_ID, &id, 1) < 0) {
+        fprintf(stderr, "[TMD3725][Error] Failed to read Sensor ID\n");
+        return -1;
+    }
+
+    if (id != TMD3725_DEVICE_ID) {
+        fprintf(stderr, "[TMD3725][Error] Invalid Sensor ID. Expected: 0x%02X, Got: 0x%02X\n",
+                TMD3725_DEVICE_ID, id);
+        return -1;
+    }
+    
+    printf("[TMD3725] Sensor ID verified successfully, ID=0x%02X\n", id);
+    return 0;
 }
 
 /* ================================================================
@@ -279,13 +290,14 @@ int tmd3725_calibrate_offset(int fd) {
  *		  PCFG0=0x4F -> 8us pulses, 16 pulses max
  *        PCFG1=0x4D -> PGAIN=2x, ~84mA LED drive
  *
- * Shared: WTIME=179 -> ~500ms wait between cycles(default value),
+ * Shared: WTIME=0x59 -> ~250ms wait between cycles(default value),
  *         PERS=0x00 -> AINT/PINT is set every cycle, no persistence filtering,
  *         CFG3=0x0C -> INT_READ_CLEAR=0, status flags cleared manually, SAI=0
  *
  * Returns 0 if setup successful, -1 otherwise
  * ================================================================ */
 int tmd3725_setup(int fd, const tmd3725_config_t *cfg) {
+    if (!cfg) return -1;
     // put sensor to sleep
     if (tmd3725_write_reg(fd, TMD3725_REG_ENABLE, 0x00) < 0) return -1;
 	g_atime_reg = cfg->atime;

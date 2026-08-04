@@ -42,6 +42,7 @@ void als_update_cache(void)
  int compute_lux(uint16_t rawr, uint16_t rawg,
                  uint16_t rawb, uint16_t rawc, float *lux)
  {
+    //if (!lux) return -2;
     *lux = 0.0f;
     if (rawc < 10) return 0;
     
@@ -62,6 +63,7 @@ void als_update_cache(void)
  * ================================================================ */
  int compute_cct(uint16_t rawb, uint16_t rawr, float *cct)
 {
+    //if (!cct) return -2;
     *cct = 0.0f;
     if (rawr < 10 || rawb < 10) return 0;   // R/B channel count too low
     *cct = CT_COEF * ((float)rawb / (float)rawr) + CT_OFFSET;
@@ -82,6 +84,7 @@ void als_update_cache(void)
 int compute_hue_saturation(uint16_t rawr, uint16_t rawg, uint16_t rawb,
                  float *hue, float *saturation)
 {
+    //if (!hue || !saturation) return -2;
     *hue = 0.0f;
     *saturation = 0.0f;
 
@@ -147,6 +150,7 @@ int compute_hue_saturation(uint16_t rawr, uint16_t rawg, uint16_t rawb,
  * ================================================================ */
 int cct_to_xy(float CCT, float *cx, float *cy)
 {
+    //if (!cx || !cy) return -2;
     *cx = 0.0f; *cy = 0.0f;
     if (CCT < 1667.0f || CCT > 25000.0f) return 0;
     float T=CCT, T2=T*T, T3=T2*T, xc, yc;
@@ -188,7 +192,8 @@ void process_als_cycle(uint16_t rawr, uint16_t rawg,
     float cx = 0.0f, cy = 0.0f;
     int cct_xy_valid = cct_to_xy(cct, &cx, &cy);
        		
-
+    //if (hs_valid == -2 || lux_status == -2 ||cct_valid == -2 ||cct_xy_valid == -2) return ;
+    
     printf("\n=== ALS ===\n");
     printf("Raw: C=%5u R=%5u G=%5u B=%5u  [AGAIN=%.1fx  ATIME=%.1fms]\n",
            rawc, rawr, rawg, rawb, g_again_value, g_atime_value);
@@ -207,11 +212,11 @@ void process_als_cycle(uint16_t rawr, uint16_t rawg,
     } 
     else 
     {
-        printf("H=%.1f  S=%.3f  [%s]\n",
+        printf("Hue=%.1f  Sat=%.3f  [%s]\n",
                hue, saturation, colored ? "Colored Light" : "Neutral Light(Hue less stable)");
 
         if (colored)
-            printf("Colored (S>=%.2f) -> CCT/(x,y) not meaningful for this light source\n",
+            printf("Colored (Sat>=%.2f) -> CCT/(x,y) not meaningful for this light source\n",
                    COLOR_SAT_THRESH);
 
 	if (saturation < COLOR_SAT_THRESH) {
@@ -223,7 +228,7 @@ void process_als_cycle(uint16_t rawr, uint16_t rawg,
                cct);
 		} 
 		else {
-        printf("CCT=%.0fK  xy=(%.4f,%.4f)\n", cct, cx, cy);
+        printf("CCT=%.0fK  (x,y)=(%.4f,%.4f)\n", cct, cx, cy);
 		}
 	}
 

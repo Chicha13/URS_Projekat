@@ -78,7 +78,7 @@ typedef struct {
 } tmd3725_data_t;
 
 int tmd3725_init(const char *i2c_device);
-int tmd3725_verify_id(int fd, uint8_t *out_id);
+int tmd3725_verify_id(int fd);
 int tmd3725_write_reg(int fd, uint8_t reg, uint8_t val);
 int tmd3725_read_reg(int fd, uint8_t reg, uint8_t *buf, uint8_t len);
 int tmd3725_read_all(int fd, tmd3725_data_t *data);

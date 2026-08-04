@@ -9,12 +9,15 @@
 static volatile sig_atomic_t g_running = 1;
 static volatile sig_atomic_t g_received_signal = 0;
 
+//Handles SIGINT and SIGTERM, allowing for the sensor to be placed into sleep mode.
 static void sigint_sigterm_handler(int signum) {
     g_received_signal = signum;
     g_running = 0;
 }
 
+//Loads the sensor configuration without performing any validation of the configured values.
 void load_configuration(const char *path, tmd3725_config_t *cfg) {
+    if (!path || !cfg) return;
     FILE *f = fopen(path, "r");
     if (!f) {
         printf("[TMD3725][Config] File %s not found. Using default configuration.\n", path);
@@ -78,7 +81,7 @@ int main(void) {
         .prox_det_thresh = 80,
         .prox_emp_thresh = 30
     };
-    uint8_t sensor_id = 0;
+
 	load_configuration("/etc/tmd3725.conf", &config);
 
     struct sigaction sa;
@@ -91,13 +94,10 @@ int main(void) {
     if (fd < 0) return -1;
 
     usleep(3000);//Time from power-on to ready to receive I2C commands typical value 1.5ms
-    if (tmd3725_verify_id(fd, &sensor_id) != 0) {
-        fprintf(stderr, "[TMD3725][Error] Invalid Sensor ID. Expected: 0x%02X, Got: 0x%02X\n",
-                TMD3725_DEVICE_ID, sensor_id);
+    if (tmd3725_verify_id(fd) < 0) {
         close(fd);
         return -1;
     }
-    printf("[TMD3725] Sensor ID verified successfully, ID=0x%02X\n", sensor_id);
 
     if (tmd3725_setup(fd, &config) < 0) {
         fprintf(stderr, "[TMD3725][Error] Sensor setup failed\n");
