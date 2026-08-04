@@ -30,24 +30,24 @@ Debug tools     : gdb-13.2
 Companion libs  : expat-2.5.0 gettext-0.21 gmp-6.2.1 isl-0.26 libiconv-1.16 mpc-1.2.1 mpfr-4.2.1 ncurses-6.4 zlib-1.2.13 zstd-1.5.5
 Companion tools :
 ```
-Ovaj toolchain je dodat kao eksterni u Buildroot sistem sa apsolutnom putanjom prema istom(za reprodukciju build-a potrebno prilagoditi).
+Ovaj toolchain je dodat kao eksterni u *Buildroot* sistem sa apsolutnom putanjom prema istom(za reprodukciju build-a potrebno prilagoditi).
  
 ### Modifikacije
-Da bismo mogli da koristimo I2C periferiju, koja nam je potrebna za komunikaciju sa senzorom, potrebno je da eksportujemo signale HPS periferija (među kojima je i I2C2) preko *FPGA Interconnect* prema FPGA dijelu *Cyclone V SoC* a zatim kroz FPGA Fabric povežemo ove signale na pinove GPIO konektora.    
+Da bismo mogli da koristimo *I2C* periferiju, koja nam je potrebna za komunikaciju sa senzorom, potrebno je da eksportujemo signale *HPS* periferija (među kojima je i *I2C2*) preko *FPGA Interconnect* prema *FPGA* dijelu *Cyclone V SoC* a zatim kroz *FPGA Fabric* povežemo ove signale na pinove *GPIO* konektora.    
 
-Ovo se postiže tako što se prilagodi konfiguracija SPL-a i U-Boot primjenom patch-a *(de1-soc-handoff.patch)* koji se na repozitorijumu nalazi u 
-*buildroot/board/terasic/de1soc_cyclone5/patches/uboot/* direktorijumu. Ovo se u Buildroot-u automatizuje na sledeći način:
+Ovo se postiže tako što se prilagodi konfiguracija *SPL*-a i *U-Boot* primjenom patch-a *(de1-soc-handoff.patch)* koji se na repozitorijumu nalazi u 
+*buildroot/board/terasic/de1soc_cyclone5/patches/uboot/* direktorijumu. Ovo se u *Buildroot*-u automatizuje na sledeći način:
 ```
 make menuconfig
 ```
-A zatim u meniju za modifikovanje Buildroot konfiguracije potrebno je postaviti: 
+A zatim u meniju za modifikovanje *Buildroot* konfiguracije potrebno je postaviti: 
 ```text
 Bootloaders
 └── [*] U-Boot
     └── (board/terasic/de1soc_cyclone5/patches/uboot) Custom U-Boot patches
 ```
-Fajl *buildroot/board/terasic/de1soc_cyclone5/boot-env.txt* za *U-Boot* okruženje je prilagođen da bi se uzele u obzir promjene.  
-*U-Boot* za programiranje FPGA prema izmjenama treba da ima pristup konfiguracionom fajlu *socfpga.rbf*, ovaj fajl je potrebno 
+Fajl *buildroot/board/terasic/de1soc_cyclone5/boot-env.txt* za *U-Boot* okruženje je prilagođen za automatsko programiranje *FPGA*.  
+*U-Boot* za programiranje *FPGA* prema izmjenama treba da ima pristup konfiguracionom fajlu *socfpga.rbf*, ovaj fajl je potrebno 
 kopirati na FAT32 particiju na SD kartici prije pokretanja sistema. 
 Da bismo izbjegli ručno kopiranje ovo se takođe može automatizovati u okviru *Buildroot* na sledeći način:
 ```text
@@ -69,8 +69,23 @@ image boot.vfat {
  size = 16M
 }
 ```
-tako da dodamo naš konfiguracioni fajl i povećamo veličinu *boot.vfat*.
+tako da dodamo naš konfiguracioni fajl i povećamo veličinu *boot.vfat*.  
+Da bi se omogućio rad *I2C2* kontrolera, u *socfpga_cyclone5_de1_soc.dts* je potrebno proširiti postojeći čvor:  
+```text
+&i2c2 {
+    status = "okay";
+    clock-frequency = <100000>;
+};
+```  
+S obzirom da radimo modifikaciju već izgrađenog sistema, *Buildroot* neće automatski prepoznati i ažurirati izmjene pri sledećem *make* jer preskače korake koji su već izvršeni.
+Da bi se modifikacije *boot-env.txt*, *de1-soc-handoff.patch*, *socfpga_cyclone5_de1_soc.dts* uzele u obzir potrebno je uraditi sledeće:
 
+```text
+make uboot-dirclean             #removes output/build/uboot-*
+make host-uboot-tools-dirclean  #removes output/build/host-uboot-tools-*
+make linux-rebuild              #generates modified .dtb
+```
+Na ovaj način osiguravamo da će *Buildroot* ponovo morati da izgradi potrebne komponente vezane za Linux jezgro i *U-Boot*.  
 
 Naš Userspace drajver je implementiran kao paket u okviru eksternog *Buildroot* stabla, ovo olakšava nadogradnju *Buildroot*-a na novu verziju kao i prenos projekta na drugi sistem, jer nije potrebno dodavanje paketa u samo *Buildroot* stablo.  
 Da bismo ga dodali u postojeću infrastrukturu potrebno je prvo uopšte registrovati ovo eksterno stablo:
@@ -92,12 +107,12 @@ make
 ```
 Ukoliko želimo da ga uklonimo radimo:
 ```
-make BR2_EXTERNAL="" menuconfig
+make BR2_EXTERNAL="" menuconfig  #or uncheck the option in External options
 make clean
 ```
 ili
 ```
-make BR2_EXTERNAL="" menuconfig
+make BR2_EXTERNAL="" menuconfig  #or uncheck the option in External options
 make tmd3725-userspace-driver-dirclean # removes output/build/tmd3725-userspace-driver/
 rm output/target/usr/bin/tmd3725_sensor
 rm output/target/etc/tmd3725.conf
@@ -238,13 +253,6 @@ ioctl 1-byte write 		(STATUS register clear)
 Za *Standard mode* ovo se izvršava ~3.56ms u odnosu na ~0.89ms za *Fast mode*, ovo vrijeme se nadovezuje na *POLL_TIME_US* i treba ga uzeti u obzir pri odabiru istog.  
 S obzirom da za praktična vremena *ATIME+WTIME* npr. default vrijednosti *171.5ms+241.2ms >> 3.56ms* prihvatljivo je da koristimo *Standard mode* u svrhu povećanja potencijalne otpornosti na efekte parazitne kapacitivnosti na *tr*.  
 
-Prema tome u *.dts* treba da se nalazi:
-```text
-&i2c2 {
-    status = "okay";
-    clock-frequency = <100000>;
-};
-```  
 Ukoliko izvršimo *probe* operaciju na *I2C-1* busu (hardverski *I2C-2*) dobijamo sledeće:
 ```text
 # i2cdetect -y -r 1
@@ -503,3 +511,42 @@ Za zasićena(saturirana) svjetla *CCT* i prema tome *CCT -> CIE (x,y)* nemaju sm
 Opcija *IR_TO_GREEN=1* multipleksira *Green* *ADC* kanal prema *IR* fotodiodi tako da će u ovom slučaju biti izmjeren *IR* sadržaj svjetlosti i rezultat mjerenja upisan u *GDATAL/GDATAH* registre, dok zelena fotodioda uopšte neće biti uključena. Za ovo mjerenje je potreban jedan čitav odvojen integracioni ciklus prilikom kojeg dakle ne bismo imali mjerenje dijela spektra svjetlosti koji odgovara zelenoj komponenti. Ovo potencijalno može da se koristi prilikom određivanja vrste izvora svjetlosti prema odnosu *IR/CLEAR* (npr. LED sijalica ima relativno mali *IR* sadržaj dok inkandescentna sijalica ima značajno veći). Dodatno informaciju o količini *IR* bi mogli da koristimo ukoliko bismo ipak željeli da radimo *IR* kompenzaciju nad *RGBC* vrijednostima(za određeni prag *IR/CLEAR*), ova opcija nije korištena s obzirom da zahtjeva čitav odvojen integracioni ciklus.  
 
 S obzirom da u *datasheet*-u senzora nisu pronađene informacije o tome da li se za slučaj *ASAT* saturacije postavlja *AINT* fleg na kraju *ALS* mjerenja, kao uslov završetka istog uzimamo *AINT|ASAT*.
+
+## Rezultati Mjerenja
+
+Mjerenje u uslovima mračne prostorije:
+```text
+=== ALS ===
+Raw: C=    4 R=    0 G=    0 B=    0  [AGAIN=128.0x  ATIME=177.9ms]
+Lux: not measured (dark/noise, C < 10 counts)
+Hue/Saturation: Noise Threshold (RGB channels < 10 counts) - not measured
+CCT/(x,y): not measured
+===========
+```
+Mjerenje u uslovima indirektne sunčeve svjetlosti:
+```text
+=== ALS ===
+Raw: C=22742 R= 8581 G= 9431 B= 8523  [AGAIN=16.0x  ATIME=177.9ms]
+Lux=559.57 lx
+Hue=116.2°  Sat=0.096  [Neutral Light(Hue less stable)]
+CCT=6293K  (x,y)=(0.3168,0.3269)
+===========
+```
+Mjerenje u uslovima direktne sunčeve svjetlosti:
+```text
+=== ALS ===
+Raw: C=39072 R=15271 G=16270 B=15432  [AGAIN=0.5x  ATIME=177.9ms]
+Lux=28927.48 lx
+Hue=129.7°  Sat=0.061  [Neutral Light(Hue less stable)]
+CCT=6372K   (x,y)=(0.3155,0.3256)
+===========
+```
+Mjerenje u uslovima crvene svjetlosti:
+```text
+=== ALS ===
+Raw: C=15069 R=14711 G= 1071 B=  882  [AGAIN=16.0x  ATIME=177.9ms]
+Lux=416.94 lx [Color Saturation Lux unreliable]
+Hue=0.8°  Sat=0.940  [Colored Light]
+Colored (Sat>=0.75) -> CCT/(x,y) not meaningful for this light source
+===========
+```
