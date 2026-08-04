@@ -203,7 +203,7 @@ void process_als_cycle(uint16_t rawr, uint16_t rawg,
     } else if (lux_status == -1) {
         printf("Lux: negative (saturated spectrum)\n");
     } else {
-        printf("Lux=%.2f%s\n", lux, colored ? " [Color Saturation Lux unreliable]" : "");
+        printf("Lux=%.2f lx%s\n", lux, colored ? " [Color Saturation Lux unreliable]" : "");
     }
 
     if (!hs_valid) {
@@ -212,7 +212,7 @@ void process_als_cycle(uint16_t rawr, uint16_t rawg,
     } 
     else 
     {
-        printf("Hue=%.1f  Sat=%.3f  [%s]\n",
+        printf("Hue=%.1f°  Sat=%.3f  [%s]\n",
                hue, saturation, colored ? "Colored Light" : "Neutral Light(Hue less stable)");
 
         if (colored)
