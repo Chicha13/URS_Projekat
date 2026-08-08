@@ -76,7 +76,11 @@ Da bi se omogućio rad *I2C2* kontrolera, u *socfpga_cyclone5_de1_soc.dts* je po
     status = "okay";
     clock-frequency = <100000>;
 };
-```  
+```
+Prilikom parsiranja ovog čvora registruje se objekat *i2c_adapter* kojem se dodjeljuje redni broj u zavisnosti od   
+redoslijeda registracije(u odnosu na ostale i2c čvorove). Nakon toga kernel drajver *i2c-dev* za ovaj objekat kreira *device node* prema njegovom rednom broju, za naš čvor
+to će biti */dev/i2c-1*.  
+
 S obzirom da radimo modifikaciju već izgrađenog sistema, *Buildroot* neće automatski prepoznati i ažurirati izmjene pri sledećem *make* jer preskače korake koji su već izvršeni.
 Da bi se modifikacije *boot-env.txt*, *de1-soc-handoff.patch*, *socfpga_cyclone5_de1_soc.dts* uzele u obzir potrebno je uraditi sledeće:
 
@@ -266,7 +270,7 @@ Ukoliko izvršimo *probe* operaciju na *I2C-1* busu (hardverski *I2C-2*) dobijam
 60: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 70: -- -- -- -- -- -- -- --
 ```
-Naš senzor je detektovan na adresi *0x39*, prema tome možemo da ostvarimo komunikaciju otvaranjem */dev/i2c-1* i izvršavanjem I2C transakcija pomoću *ioctl* sistemskih poziva. 
+Naš senzor je detektovan na adresi *0x39*, prema tome možemo da ostvarimo komunikaciju otvaranjem čvora */dev/i2c-1* i izvršavanjem I2C transakcija pomoću *ioctl* sistemskih poziva. 
 Da je postojao *kernel driver* vezan za ovu adresu, umjesto *39* vidjeli bismo *UU* (*Used*) - ovo bi značilo da *i2cdetect* prepoznaje da adresu već koristi neki kernel drajver, pa uopšte ne šalje *probe* na tu adresu, nego samo prijavljuje da je zauzeta.
 
 ## Proximity Mjerenje
@@ -319,7 +323,7 @@ Optičke karakteristike vezane za *Proximity* mjerenje su dostupne u sledećoj t
 - *Response, no target after optical calibration* - govori da *PDATA* vrijednost izmjerena bez mete nakon izvršene optičke kalibracije može da varira u opsegu 0-12 *counts*, ovo uzimamo u obzir pri izboru *BINSRCH_TARGET*=4 (*PDATA*=15) vrijednosti veće od 12 tako da *PDATA* ne može da bude 0 nakon kalibracije.
 
 *PSAT_REFLECTIVE* je saturacija koja nastaje tokom *IR LED active* dijela *Proximity* ciklusa, dakle nastaje kao rezultat odbijenog signala od objekta ispred senzora i može se smatrati da je objekat detektovan.  
-*PSAT_AMBIENT* je saturacija koja nastaje tokom *IR LED inactive* dijela *Proximity* ciklusa, dakle nastaje kao rezultat *IR* sadržaja svijetlosti okoline koja pada na senzor, u ovom slučaju mjerenje se smatra nevalidnim.   
+*PSAT_AMBIENT* je saturacija koja nastaje tokom *IR LED inactive* dijela *Proximity* ciklusa, dakle nastaje kao rezultat *IR* sadržaja svjetlosti okoline koja pada na senzor, u ovom slučaju mjerenje se smatra nevalidnim.   
 S obzirom da u *datasheet*-u senzora nisu pronađene informacije o tome da li se za ova dva slučaja saturacije postavlja *PINT* fleg na kraju *Proximity* mjerenja, kao uslov završetka istog uzimamo *PINT|PSAT_REFLECTIVE|PSAT_AMBIENT*.  
 
 ## ALS Mjerenje
@@ -348,8 +352,9 @@ suprotno ukoliko je vrijednost veća od 75% maksimalne moguće tada smanjujemo *
 Nama su od interesa sledeće veličine:
 - *Lux* - Procjena intenziteta izmjerene svjetlosti u odnosu na osjetljivost ljudskog oka(Fotometrijska procjena).
 - *CIE(x,y)* - Predstavlja hromatske koordinate koje opisuju nijansu i saturaciju(zasićenje) svjetlosti, nezavisno od intenziteta iste.
-- *CT (Color Temperature)* - je temperatura u kelvinima na koju bi neko idealno teoretsko crno tijelo(*blackbody*) trebalo da bude zagrijano da emituje tu boju svjetlosti, *CT* se odnosi na *Planckian* izvore svjetlosti npr. sunce, inkandescentna sijalica itd.
-*CCT (Correlated Color Temperature)* je proširenje ovog koncepta tako da se uključe izvori koji ne proizvode svijetlost zagrijavanjem(npr. LED) i predstavlja temperaturu onog crnog tijela čija je boja svjetlosti najsličnija boji posmatranog izvora. Važno je napomenuti da je *CCT* smislena samo za svjetlosti koje su u blizini *Planckian locus*-a tj. za bijele neutralne svijetlosti.  
+- *CT (Color Temperature)* - je temperatura u kelvinima na koju bi neko idealno teoretsko crno tijelo(*blackbody*) trebalo da bude zagrijano da bi hromatičnost svjetlosti koju ono emituje bila najbliža hromatičnosti posmatranog izvora svjetlosti, *CT* se odnosi na termalne izvore svjetlosti npr. sunce, inkandescentna sijalica itd.
+*CCT (Correlated Color Temperature)* je proširenje ovog koncepta tako da se uključe izvori koji ne proizvode svjetlost zagrijavanjem(npr. LED).
+Važno je napomenuti da samo tačke koje se nalaze na *Planckian locus* imaju direktnu *CCT* vrijednost, tačkama koje se nalaze van *Planckian locus*-a se dodjeljuje *CCT* njima najbliže tačke na lokusu.  
 
 U *AMS*-ovom ([TMD3725 EVM Users Guide.pdf](https://www.mouser.com/catalog/specsheets/ams_04022019_TMD3725%20EVM%20Users%20Guide.pdf)) *Userguide*-u za senzor možemo da pronađemo sledeće parametre:
 ```text
@@ -452,7 +457,7 @@ McCamy (1992) equation for calculating the CCT of a light source:
 n = (x - 0.3320) / (0.1858 - y)
 CCT = 449.0·n³ + 3525.0·n² + 6823.3·n + 5520.33
 
-McCamy's equation provides very good accuracy for chromaticities lying within approximately ±0.02 (x,y) of the Planckian locus
+McCamy's equation provides acceptable accuracy for chromaticities lying within approximately ±0.02 (x,y) of the Planckian locus
 ```
 
 U našem slučaju, pošto *RGBC* senzor ne mjeri pun spektar *Φ(λ)* nego samo četiri integrisane vrijednosti, *XYZ* se procjenjuju primjenom linearne transformacije nad vrijednostima *RGBC* kanala.
@@ -462,16 +467,15 @@ X = (-0.14282F * r) + (1.54924F * g) + (-0.95641F * b);
 Y = (-0.32466F * r) + (1.57837F * g) + (-0.73191F * b);  
 Z = (-0.68202F * r) + (0.77073F * g) + (0.56332F * b);  
 ```
-Međutim ovakvi koeficijenti nisu dostupni za naš senzor, prema tome potrebno je pronaći alternativni način za određivanje hromatičnosti.
+Međutim ovakvi koeficijenti nisu dostupni za naš senzor, prema tome potrebno je pronaći alternativni način za određivanje hromatičnosti i *CCT*.
 
 S obzirom da ne možemo da koristimo *McCamy* postupak računanja *CCT*, koristićemo prethodno definisanu aproksimaciju koja koristi koeficijente iz *Useguide*, pri čemu ćemo kao i pri proračunu *Lux*-a koristiti sirove vrijednosti *RGBC* bez *IR* kompenzacije:
 ```text
 CT = CT_Coef * B_raw / R_raw + CT_Offset
 ```
 Za određivanje hromatskih koordinata *(x,y)* možemo da koristimo inverzni postupak *Kang, Moon, Hong, Lee, Cho and Kim (2002) method* kojim ćemo da dobijemo *(x,y)* iz prethodno izračunate vrijednosti *CCT*. Ograničenje ovog postupka je da će dobijene vrijednosti *(x,y)* uvijek da se nalaze na *Planckian locus*-u jer je *CCT -> CIE (x,y)* jednoznačna transformacija dok obrnuto nije slučaj.  
-Kao što je već rečeno *CCT* ovde ima smisla računati samo za svjetla koja nisu saturirana.
-
-*Color Saturation* ćemo odrediti prema [ColorProxDetect-AN000520.pdf](https://look.ams-osram.com/m/dff117778e5dd00/original/ColorProxDetect-AN000520.pdf#page=10) na sledeći način:
+S obzirom da ovde sada ne možemo da vršimo provjeru validnosti *CCT* pomoću udaljenosti *(x,y)* od lokusa, kao što bi to radili sa *McCamy* metodom, potreban nam je alternativni način 
+određivanja tačnosti *CCT*. Za našu aproksimaciju *CCT* možemo da pronađemo uslov za validno korištenje postavljen u zavisnosti od *Color Saturation* vrijednosti prema [ColorProxDetect-AN000520.pdf](https://look.ams-osram.com/m/dff117778e5dd00/original/ColorProxDetect-AN000520.pdf#page=10) definisan na sledeći način:
 ```text
 As the color becomes saturated, the lux and CT estimates become less accurate. To determine 
 when this happens, a calculation of color saturation can be used to determine this condition and then 
@@ -485,7 +489,9 @@ Saturation = (M – m) / M
 For white light, R”~G”~B” and M – m is small and (M – m) / M is smaller. For saturated light, M – m is 
 large and if (M – m) / M > 0.75, the light source is starting to saturate. 
 ```
-gdje ćemo takođe koristiti sirove vrijednosti *RGB*.
+Gdje ćemo pri računanju saturacije koristiti sirove vrijednosti *RGB*.   
+S obzirom da većina tačaka na *Planckian locus*-u odgovara bijelim neutralnim svjetlima
+uslov za validan *CCT* - *Saturation<0.75* potencijalno može da isključi samo tačke na krajevima lokus krive.
 
 *Hue*, koji predstavlja nijansu boje, ćemo računati prema aproksimaciji standardne *RGB* u *HSV* konverzije:
 ```text
@@ -503,12 +509,22 @@ H' =      │
 
 H = 60° × H'
 ```
-Gdje *Hue* ima najviše smisla za saturirana svjetla, za neutralna svjetla *C = M - m* može da bude 0(čisto neutralno) ili da izaziva velike varijacije u vrijednosti, geometrijski ovaj ugao nema smisla za čisto neutralnu svijetlost(x=0.33, y=0.33) jer je radijus(saturacija) koji formira kružnicu po kojoj se *Hue* kreće sada 0.
+Gdje *Hue* ima najviše smisla za saturirana svjetla, za neutralna svjetla *C = M - m* može da bude 0(čisto neutralno) ili da izaziva velike varijacije u vrijednosti, geometrijski ovaj ugao nema smisla za čisto neutralnu svjetlost(x=0.33, y=0.33) jer je radijus(saturacija) koji formira kružnicu po kojoj se *Hue* kreće sada 0.  
+*Hue*(nijansa) se interpretira na sledeći način:
+| Hue (°) | Boja |
+|---|---|
+| 0° | Crvena |
+| 60° | Žuta |
+| 120° | Zelena |
+| 180° | Cijan |
+| 240° | Plava |
+| 300° | Magenta |
+| 360° | Crvena |
 
-Dakle za neutralna svjetla relevantne informacije dobijamo iz vrijednosti *CCT* i inverznog postupka *CCT -> CIE (x,y)*, dok nam *Hue* ovde potencijalno daje nesmislenu vrijednost.
+Dakle za neutralna svjetla relevantne informacije dobijamo iz vrijednosti *CCT* i inverznog postupka *CCT -> CIE (x,y)*, dok nam *Hue* ovde potencijalno daje nesmislenu vrijednost.  
 Za zasićena(saturirana) svjetla *CCT* i prema tome *CCT -> CIE (x,y)* nemaju smisleno značenje, dok nam *Hue* i *Color Saturation* daju informaciju o hromatičnosti svjetlosti.
 
-Opcija *IR_TO_GREEN=1* multipleksira *Green* *ADC* kanal prema *IR* fotodiodi tako da će u ovom slučaju biti izmjeren *IR* sadržaj svjetlosti i rezultat mjerenja upisan u *GDATAL/GDATAH* registre, dok zelena fotodioda uopšte neće biti uključena. Za ovo mjerenje je potreban jedan čitav odvojen integracioni ciklus prilikom kojeg dakle ne bismo imali mjerenje dijela spektra svjetlosti koji odgovara zelenoj komponenti. Ovo potencijalno može da se koristi prilikom određivanja vrste izvora svjetlosti prema odnosu *IR/CLEAR* (npr. LED sijalica ima relativno mali *IR* sadržaj dok inkandescentna sijalica ima značajno veći). Dodatno informaciju o količini *IR* bi mogli da koristimo ukoliko bismo ipak željeli da radimo *IR* kompenzaciju nad *RGBC* vrijednostima(za određeni prag *IR/CLEAR*), ova opcija nije korištena s obzirom da zahtjeva čitav odvojen integracioni ciklus.  
+Opcija *IR_TO_GREEN=1* multipleksira *Green* *ADC* kanal prema *IR* fotodiodi tako da će u ovom slučaju biti izmjeren *IR* sadržaj svjetlosti i rezultat mjerenja upisan u *GDATAL/GDATAH* registre, dok zelena fotodioda uopšte neće biti uključena. Za ovo mjerenje je potreban jedan čitav odvojen integracioni ciklus prilikom kojeg dakle ne bismo imali mjerenje dijela spektra svjetlosti koji odgovara zelenoj komponenti. Ovo potencijalno može da se koristi prilikom određivanja vrste izvora svjetlosti prema odnosu *IR/CLEAR* (npr. LED sijalica ima relativno mali *IR* sadržaj dok inkandescentna sijalica ima značajno veći). Dodatno *IR* blokirajući filtri na *RGBC* fotodiodama su značajno bolji nego kod senzora starijih generacija ali ipak nisu savršeni, potencijalno bi ipak željeli da radimo *IR=(R+G+B-C)/2* kompenzaciju nad *RGBC* vrijednostima za određeni prag *IR/CLEAR*, ova opcija nije korištena s obzirom da zahtjeva čitav odvojen integracioni ciklus.  
 
 S obzirom da u *datasheet*-u senzora nisu pronađene informacije o tome da li se za slučaj *ASAT* saturacije postavlja *AINT* fleg na kraju *ALS* mjerenja, kao uslov završetka istog uzimamo *AINT|ASAT*.
 
@@ -550,3 +566,13 @@ Hue=0.8°  Sat=0.940  [Colored Light]
 Colored (Sat>=0.75) -> CCT/(x,y) not meaningful for this light source
 ===========
 ```
+
+## Korišćenje alata vještačke inteligencije 
+
+Prilikom implementacije projekta korišten je *Claude Anthropic*(model *Sonnet 5*) za analizu koda i hardverskih funkcionalnosti senzora.  
+Naročito je potrebno izdvojiti sledeće doprinose:  
+- Ideja o korištenju i implementacija funkcionalnosti *Alternate screen buffer* prilikom prikaza rezultata na terminalu.  
+- Ideja o korištenju i implementacija *Kang (2002)* metode za *CCT -> CIE (x,y)* transformaciju.  
+- Ideja o korištenju Eksternog stabla/paketa pri dodavanju userspace drajvera u *Buildroot* sistem.  
+- Generisanje *main.c:load_configuration()* za parsiranje konfiguracionog fajla */etc/tmd3725.conf* prema zahtijevanim parametrima.    
+- Generisanje prikaznih tabela za izvještaj(README.md). 
