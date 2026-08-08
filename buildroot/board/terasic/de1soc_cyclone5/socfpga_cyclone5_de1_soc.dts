@@ -96,7 +96,6 @@
 
 &i2c2 {
     status = "okay";
-    //standard mode(100kHz) used, fast mode(400kHz) also supported
     clock-frequency = <100000>;
 };
 
