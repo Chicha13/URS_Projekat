@@ -180,7 +180,7 @@ Ovde sada imamo deterministično postavljanje *PINT/AINT* nakon završetka svako
 *polling* pristup umjesto userspace pristup GPIO prekidu(*event driven* pristup preko *sysfs* ili *libgpiod*).
 
 Vrijednosti mjerenja ostaju u registrima sve dok se u narednom integracionom ciklusu to isto mjerenje ne završi i upiše nove vrijednosti.
-Mi ćemo raditi periodičan *polling* sa uslovom da su oba mjerenja(Proximity i ALS) završena u tom ciklusu i nakon toga ručno čistiti *STATUS* registar pri čemu senzor nastavlja regularno sa radom bez obzira na vrijednosti u *STATUS*.
+Mi ćemo raditi periodičan *polling* sa uslovom da su oba mjerenja(*Proximity* i *ALS*) završena u tom ciklusu i nakon toga ručno čistiti *STATUS* registar pri čemu senzor nastavlja regularno sa radom bez obzira na vrijednosti u *STATUS*.
 
 Pošto naš uslov zahtijeva da su oba flag-a (*AINT* i *PINT*) već postavljena da bi se *poll* smatrao uspješnim, prvi trenutak kada taj uslov uopšte može biti tačan je tek nakon što Proximity mjerenje završi. Od tog trenutka pa do završetka ALS mjerenja u sledećem ciklusu podaci u registrima ostaju iz istog ciklusa,
 prema tome treba da biramo vrijeme *polling*-a:  
@@ -189,7 +189,9 @@ POLL_TIME_ms + I2C_CYCLE_WORST_CASE_TIME_ms < ATIME_ms_min + WTIME_ms_min
 ```
 jer nam ovaj uslov omogućava da *ALS* i *Proximity* rezultati mjerenja budu iz istog integracionog ciklusa, kao i da nijedan ciklus mjerenja neće biti propušten.   
 Prilikom odabira vrijednosti *POLL_TIME_US* potrebno je uzeti u obzir da korak za *ATIME/WTIME* može da se nalazi u sledećem opsegu:  
-*Integration time step size(2.68 - 2.90) ms Typical value 2.78ms*  i mi treba da koristimo minimalnu vrijednost *2.68ms* pri proračunu.  
+*Integration time step size(2.68 - 2.90) ms Typical value 2.78ms*  i mi treba da koristimo minimalnu vrijednost *2.68ms* pri proračunu.   
+Dodatno ~*POLL_TIME_US* je maksimalno potencijalno vrijeme kašnjenja prikaza rezultata mjerenja u odnosu na završetak ciklusa.    
+Ova analiza podrazumijeva da *usleep()* budi proces tačno nakon zadatog vremena, za šta nema garancije.  
 
 Vrijednosti *POLL_TIME_US, ATIME, WTIME* mogu da se modifikuju u okviru konfiguracionog fajla */etc/tmd3725.conf* pri čemu treba obratiti pažnju na to da logika koja čita i parsira konfiguraciju (*main.c:load_configuration()*) ne vrši bilo kakvu provjeru smislenosti/validnosti unesenih parametara.
 
@@ -217,7 +219,7 @@ issues a STOP command and the I²C bus is released).
 ```   
 Dakle postoji interni bufer u kojem ostaje adresa registra posljednje transakcije, ovo praktično znači da prilikom *Read* možemo da izostavimo prvi *i2c_msg* koji upisuje adresu registra ukoliko je prethodna transakcija postavila interni bafer na adresu sa koje želimo da čitamo. Npr. ovo bi teoretski značilo da bi se *Read* mogao implementirati i bez *repeated-start* formata sa *write+STOP+read*.  
 
-Ukoliko je *POLL_TIME_US* vrijeme izabrano adekvatno(blizu ali manje od *ATIME_ms_min + WTIME_ms_min*) možemo da očekujemo maksimalno 2 *poll*-a po ciklusu, tako da umjesto čitanja samo *STATUS* registra(1 bajt) a zatim kada je uslov ispunjen čitanja svih registara vezanih za mjerenje(9 bajt-ova), možemo jednostavno da čitamo svih 10 bajtova u jednom *ioctl* sistemskom pozivu.  
+Ukoliko je *POLL_TIME_US* vrijeme još dodatno izabrano da zadovolji uslov *(ATIME_ms_min + WTIME_ms_min)/POLL_TIME_ms < 2* možemo da očekujemo maksimalno 2 *poll*-a po ciklusu, tako da umjesto čitanja samo *STATUS* registra(1 bajt) a zatim kada je uslov ispunjen čitanja svih registara vezanih za mjerenje(9 bajt-ova), možemo jednostavno da čitamo svih 10 bajtova u jednom *ioctl* sistemskom pozivu.  
 Najgori slučaj *polling*-a za ciklus bi nam tada bio:  
 ```text
 ioctl 10-byte read   (STATUS+measurement data)
@@ -254,7 +256,7 @@ Ukoliko uzmemo u obzir najgoru moguću I2C transakciju za ciklus, ona se sastoji
 3x ioctl 1-byte write   (AGAIN adjustment)
 ioctl 1-byte write 		(STATUS register clear)
 ```  
-Za *Standard mode* ovo se izvršava ~3.56ms u odnosu na ~0.89ms za *Fast mode*, ovo vrijeme se nadovezuje na *POLL_TIME_US* i treba ga uzeti u obzir pri odabiru istog.  
+Za *Standard mode* ovo se izvršava ~3.56ms u odnosu na ~0.89ms za *Fast mode*, ovo vrijeme(*I2C_CYCLE_WORST_CASE_TIME_ms*) se nadovezuje na *POLL_TIME_US* i treba ga uzeti u obzir pri odabiru istog.  
 S obzirom da za praktična vremena *ATIME+WTIME* npr. default vrijednosti *171.5ms+241.2ms >> 3.56ms* prihvatljivo je da koristimo *Standard mode* u svrhu povećanja potencijalne otpornosti na efekte parazitne kapacitivnosti na *tr*.  
 
 Ukoliko izvršimo *probe* operaciju na *I2C-1* busu (hardverski *I2C-2*) dobijamo sledeće:
