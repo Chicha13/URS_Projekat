@@ -190,7 +190,7 @@ POLL_TIME_ms + I2C_CYCLE_WORST_CASE_TIME_ms < ATIME_ms_min + WTIME_ms_min
 jer nam ovaj uslov omogućava da *ALS* i *Proximity* rezultati mjerenja budu iz istog integracionog ciklusa, kao i da nijedan ciklus mjerenja neće biti propušten.   
 Prilikom odabira vrijednosti *POLL_TIME_US* potrebno je uzeti u obzir da korak za *ATIME/WTIME* može da se nalazi u sledećem opsegu:  
 *Integration time step size(2.68 - 2.90) ms Typical value 2.78ms*  i mi treba da koristimo minimalnu vrijednost *2.68ms* pri proračunu.   
-Dodatno ~*POLL_TIME_US* je maksimalno potencijalno vrijeme kašnjenja prikaza rezultata mjerenja u odnosu na završetak ciklusa.    
+Dodatno ~*POLL_TIME_US* je maksimalno potencijalno vrijeme kašnjenja prikaza rezultata mjerenja u odnosu na trenutak kada je *Proximity* mjerenje završeno.    
 Ova analiza podrazumijeva da *usleep()* budi proces tačno nakon zadatog vremena, za šta nema garancije.  
 
 Vrijednosti *POLL_TIME_US, ATIME, WTIME* mogu da se modifikuju u okviru konfiguracionog fajla */etc/tmd3725.conf* pri čemu treba obratiti pažnju na to da logika koja čita i parsira konfiguraciju (*main.c:load_configuration()*) ne vrši bilo kakvu provjeru smislenosti/validnosti unesenih parametara.
