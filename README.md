@@ -219,7 +219,7 @@ issues a STOP command and the I²C bus is released).
 ```   
 Dakle postoji interni bufer u kojem ostaje adresa registra posljednje transakcije, ovo praktično znači da prilikom *Read* možemo da izostavimo prvi *i2c_msg* koji upisuje adresu registra ukoliko je prethodna transakcija postavila interni bafer na adresu sa koje želimo da čitamo. Npr. ovo bi teoretski značilo da bi se *Read* mogao implementirati i bez *repeated-start* formata sa *write+STOP+read*.  
 
-Ukoliko je *POLL_TIME_US* vrijeme još dodatno izabrano da zadovolji uslov *(ATIME_ms_min + WTIME_ms_min)/POLL_TIME_ms < 2* možemo da očekujemo maksimalno 2 *poll*-a po ciklusu, tako da umjesto čitanja samo *STATUS* registra(1 bajt) a zatim kada je uslov ispunjen čitanja svih registara vezanih za mjerenje(9 bajt-ova), možemo jednostavno da čitamo svih 10 bajtova u jednom *ioctl* sistemskom pozivu.  
+Ukoliko je *POLL_TIME_US* vrijeme još dodatno izabrano da zadovolji uslov *(ATIME_ms_max + WTIME_ms_max)/POLL_TIME_ms < 2* možemo da očekujemo maksimalno 2 *poll*-a po ciklusu, tako da umjesto čitanja samo *STATUS* registra(1 bajt) a zatim kada je uslov ispunjen čitanja svih registara vezanih za mjerenje(9 bajt-ova), možemo jednostavno da čitamo svih 10 bajtova u jednom *ioctl* sistemskom pozivu.  
 Najgori slučaj *polling*-a za ciklus bi nam tada bio:  
 ```text
 ioctl 10-byte read   (STATUS+measurement data)
