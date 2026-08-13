@@ -126,7 +126,7 @@ Više o funkcionalnosti eksternog stabla u *Buildroot*-u: [External tree Buildro
 
 ## Postupak Mjerenja
 
-Jedan integracioni ciklus senzora se sastoji od 3 odvojena dijela(stanja) koji se, ukoliko su uključeni, uvijek izvršavaju u istom rasporedu:
+Jedan integracioni ciklus senzora se sastoji od 3 odvojena dijela(stanja) koji se, ukoliko su uključeni, uvijek izvršavaju sekvencijalno u istom rasporedu:
 
 **ALS -> Proximity -> Wait Timer**
 
@@ -175,9 +175,9 @@ Tipično način na koji bi radili jeste da postavimo granice za vrijednosti mjer
 Zatim bi omogućili *AIEN/PIEN/SAI/INT_READ_CLEAR* tako da kada se postavi hardverski interrupt *INT* zbog omogućenog *SAI* oscilator se gasi i vrijednosti mjerenja se nalaze u registrima sve dok ne pročitamo *STATUS* registar, nakon toga se *STATUS* registar zbog omogućenog INT_READ_CLEAR automatski čisti i senzor započinje novi integracioni ciklus.  
 
 Mi ćemo za prikaz funkcionalnosti ovog senzora raditi sa oba mjerenja u svakom integracionom ciklusu (AEN/PEN = 1), bez postavljenih granica ili perzistencije za vrijednosti mjerenja, tako da jednostavno u svakom ciklusu čitamo obe vrijednosti mjerenja.  
-S obzirom da su ova dva mjerenja sekvencijalna a ne paralelna praktično nam je najlakše da kao uslov završenog ciklusa jednostavno uzmemo da su oba mjerenja završena istovremeno, ovo znači da možemo da očekujemo nove vrijednosti npr. po default ATIME(~178ms) + 4*PRATE(~2.8ms) svakih ~200ms.  
+S obzirom da su ova dva mjerenja sekvencijalna a ne paralelna praktično nam je najlakše da kao uslov završenog ciklusa jednostavno uzmemo da su oba mjerenja završena istovremeno, ovo znači da možemo da očekujemo nove vrijednosti npr. po default ALS(~178ms) + PROX(~12ms) + WTIME(~250ms) svakih ~440ms.  
 Ovde sada imamo deterministično postavljanje *PINT/AINT* nakon završetka svakog integracionog ciklusa. Prema tome sasvim je adekvatno da jednostavno koristimo
-*polling* pristup umjesto userspace pristup GPIO prekidu(*event driven* pristup preko *sysfs* ili *libgpiod*).
+*polling* pristup umjesto userspace pristup GPIO prekidu(*event driven* pristup preko *sysfs* ili *libgpiod*).  
 
 Vrijednosti mjerenja ostaju u registrima sve dok se u narednom integracionom ciklusu to isto mjerenje ne završi i upiše nove vrijednosti.
 Mi ćemo raditi periodičan *polling* sa uslovom da su oba mjerenja(*Proximity* i *ALS*) završena u tom ciklusu i nakon toga ručno čistiti *STATUS* registar pri čemu senzor nastavlja regularno sa radom bez obzira na vrijednosti u *STATUS*.
@@ -350,7 +350,7 @@ Provjeru na saturaciju ćemo vršiti poređenjem trenutne vrijednosti *clear cha
  
 Kada trenutno analogno pojačanje *AGAIN* više nije adekvatno za uslove osvetljenja, potrebno ga je dinamički prilagoditi u svrhu poboljšanja preciznosti ili sprečavanja saturacije.
 Ovo radimo implementacijom *Auto-Gain* funkcionalnosti tako da ukoliko je vrijednost *clear channel counts* manja od 15% maksimalne moguće za vrijednost *ATIME*, tada povećavamo *AGAIN*,
-suprotno ukoliko je vrijednost veća od 75% maksimalne moguće tada smanjujemo *AGAIN* u cilju izbjegavanja saturacije. Logika *Auto-Gain* je implementirana funkcijom *TMD3725.c:‎tmd3725_adjust_again()*. S obzirom na to da u *datasheet*-u senzora nije opisan *Auto-Zero (AZ)* mehanizam vezan za *ALS* mjerenje, niti kada ga je potrebno koristiti, mi ćemo ovaj mehanizam pokretati pri inicijalnom podešavanju senzora, kao i pri svakoj promjeni vrijednosti *AGAIN*.  
+suprotno ukoliko je vrijednost veća od 75% maksimalne moguće tada smanjujemo *AGAIN* u cilju izbjegavanja saturacije. Logika *Auto-Gain* je implementirana funkcijom *TMD3725.c:‎tmd3725_adjust_again()*. S obzirom na to da u *datasheet*-u senzora nije opisan *Auto-Zero (AZ)* mehanizam vezan za *ALS* mjerenje, niti kada ga je potrebno koristiti, mi ćemo ovaj mehanizam pokretati pri inicijalnom podešavanju senzora, kao i pri svakoj promjeni vrijednosti *AGAIN*. *Auto-Zero (AZ)* se izvršava paralelno sa *WTIME* i pretpostavka je da u
 
 Nama su od interesa sledeće veličine:
 - *Lux* - Procjena intenziteta izmjerene svjetlosti u odnosu na osjetljivost ljudskog oka(Fotometrijska procjena).
