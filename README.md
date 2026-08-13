@@ -350,7 +350,7 @@ Provjeru na saturaciju ćemo vršiti poređenjem trenutne vrijednosti *clear cha
  
 Kada trenutno analogno pojačanje *AGAIN* više nije adekvatno za uslove osvetljenja, potrebno ga je dinamički prilagoditi u svrhu poboljšanja preciznosti ili sprečavanja saturacije.
 Ovo radimo implementacijom *Auto-Gain* funkcionalnosti tako da ukoliko je vrijednost *clear channel counts* manja od 15% maksimalne moguće za vrijednost *ATIME*, tada povećavamo *AGAIN*,
-suprotno ukoliko je vrijednost veća od 75% maksimalne moguće tada smanjujemo *AGAIN* u cilju izbjegavanja saturacije. Logika *Auto-Gain* je implementirana funkcijom *TMD3725.c:‎tmd3725_adjust_again()*. S obzirom na to da u *datasheet*-u senzora nije opisan *Auto-Zero (AZ)* mehanizam vezan za *ALS* mjerenje, niti kada ga je potrebno koristiti, mi ćemo ovaj mehanizam pokretati pri inicijalnom podešavanju senzora, kao i pri svakoj promjeni vrijednosti *AGAIN*. *Auto-Zero (AZ)* se izvršava paralelno sa *WTIME* i pretpostavka je da u
+suprotno ukoliko je vrijednost veća od 75% maksimalne moguće tada smanjujemo *AGAIN* u cilju izbjegavanja saturacije. Logika *Auto-Gain* je implementirana funkcijom *TMD3725.c:‎tmd3725_adjust_again()*. S obzirom na to da u *datasheet*-u senzora nije opisan *Auto-Zero (AZ)* mehanizam vezan za *ALS* mjerenje, niti kada ga je potrebno koristiti, mi ćemo ovaj mehanizam pokretati pri inicijalnom podešavanju senzora, kao i pri svakoj promjeni vrijednosti *AGAIN*. *Auto-Zero (AZ)* se izvršava paralelno sa *WTIME*.
 
 Nama su od interesa sledeće veličine:
 - *Lux* - Procjena intenziteta izmjerene svjetlosti u odnosu na osjetljivost ljudskog oka(Fotometrijska procjena).
