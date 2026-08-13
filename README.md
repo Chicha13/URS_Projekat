@@ -182,7 +182,7 @@ Ovde sada imamo deterministično postavljanje *PINT/AINT* nakon završetka svako
 Vrijednosti mjerenja ostaju u registrima sve dok se u narednom integracionom ciklusu to isto mjerenje ne završi i upiše nove vrijednosti.
 Mi ćemo raditi periodičan *polling* sa uslovom da su oba mjerenja(*Proximity* i *ALS*) završena u tom ciklusu i nakon toga ručno čistiti *STATUS* registar pri čemu senzor nastavlja regularno sa radom bez obzira na vrijednosti u *STATUS*.
 
-Pošto naš uslov zahtijeva da su oba flag-a (*AINT* i *PINT*) već postavljena da bi se *poll* smatrao uspješnim, prvi trenutak kada taj uslov uopšte može biti tačan je tek nakon što Proximity mjerenje završi. Od tog trenutka pa do završetka ALS mjerenja u sledećem ciklusu podaci u registrima ostaju iz istog ciklusa,
+Pošto naš uslov zahtijeva da su oba flag-a (*AINT* i *PINT*) već postavljena da bi se *poll* smatrao uspješnim, prvi trenutak kada taj uslov uopšte može biti tačan je tek nakon što *Proximity* mjerenje završi. Od tog trenutka pa do završetka *ALS* mjerenja u sledećem ciklusu podaci u registrima ostaju iz istog ciklusa,
 prema tome treba da biramo vrijeme *polling*-a:  
 ```text
 POLL_TIME_ms + I2C_CYCLE_WORST_CASE_TIME_ms < ATIME_ms_min + WTIME_ms_min 
@@ -190,13 +190,14 @@ POLL_TIME_ms + I2C_CYCLE_WORST_CASE_TIME_ms < ATIME_ms_min + WTIME_ms_min
 jer nam ovaj uslov omogućava da *ALS* i *Proximity* rezultati mjerenja budu iz istog integracionog ciklusa, kao i da nijedan ciklus mjerenja neće biti propušten.   
 Prilikom odabira vrijednosti *POLL_TIME_US* potrebno je uzeti u obzir da korak za *ATIME/WTIME* može da se nalazi u sledećem opsegu:  
 *Integration time step size(2.68 - 2.90) ms Typical value 2.78ms*  i mi treba da koristimo minimalnu vrijednost *2.68ms* pri proračunu.   
-Dodatno ~*POLL_TIME_US* je maksimalno potencijalno vrijeme kašnjenja prikaza rezultata mjerenja u odnosu na trenutak kada je *Proximity* mjerenje završeno.    
+Dodatno ~*POLL_TIME_US* je maksimalno potencijalno vrijeme kašnjenja prikaza rezultata mjerenja na terminalu u odnosu na trenutak kada je *Proximity* mjerenje završeno.   
+Prema tome veća frekvencija *polling*-a nam smanjuje ovo kašnjenje ali povećava zauzeće *I2C* busa i broj *ioctl* sistemskih poziva.  
 Ova analiza podrazumijeva da *usleep()* budi proces tačno nakon zadatog vremena, za šta nema garancije.  
 
 Vrijednosti *POLL_TIME_US, ATIME, WTIME* mogu da se modifikuju u okviru konfiguracionog fajla */etc/tmd3725.conf* pri čemu treba obratiti pažnju na to da logika koja čita i parsira konfiguraciju (*main.c:load_configuration()*) ne vrši bilo kakvu provjeru smislenosti/validnosti unesenih parametara.
 
-*INT_READ_CLEAR* ovde nećemo koristiti jer bi ovo potencijalno značilo da bi *polling* za vrijeme *proximity* mjerenja, dok još nije završeno, očistio *AINT*
-koji je postavljen nakon završetka *ALS* mjerenja pri čemu naš uslov završenog ciklusa (ALS i Proximity oba završena) nije zadovoljen, umjesto toga ćemo ručno čistiti *STATUS* registar.
+*INT_READ_CLEAR* ovde nećemo koristiti jer bi ovo potencijalno značilo da bi *polling* za vrijeme *Proximity* mjerenja, dok još nije završeno, očistio *AINT*
+koji je postavljen nakon završetka *ALS* mjerenja pri čemu naš uslov završenog ciklusa (*ALS* i *Proximity* oba završena) nije zadovoljen, umjesto toga ćemo ručno čistiti *STATUS* registar.
 
 Dijagram mašine stanja senzora:[TMD3725 datasheet - State Diagram](https://look.ams-osram.com/m/6a4d0816b7d3a4bf/original/TMD3725-ALS-Color-and-Proximity-Sensor-Module.pdf#page=16) 
 
@@ -209,7 +210,7 @@ A Read transaction consists of a START, CHIP-ADDRESS-WRITE, REGISTER-ADDRESS, ST
 ```
 Ovo ćemo implementirati pomoću *ioctl* sistemskog poziva sa *I2C_RDWR* flegom.    
 *Read* transakciju implementiramo sa 2 *i2c_msg* poruke, gdje prva upisuje adresu registra iz kojeg čitamo a druga čita zahtjevani broj bajtova, između njih se nalazi *START(repeated-start)*.  
-*Write* transakciju implementiramo sa 1 *i2c_msg* porukom u kojoj se nalazi adresa i bajt koji tu pišemo, nakon ovoga slijedi *STOP*, *repeated-start* ovdje nije potreban.  
+*Write* transakciju implementiramo sa 1 *i2c_msg* porukom u kojoj se nalazi adresa i bajt koji tu pišemo, nakon ovoga slijedi *STOP*, *repeated-start* ovde nije potreban.  
 
 Dodatno bitno je izdvojiti:        
 ```text
@@ -219,19 +220,18 @@ issues a STOP command and the I²C bus is released).
 ```   
 Dakle postoji interni bufer u kojem ostaje adresa registra posljednje transakcije, ovo praktično znači da prilikom *Read* možemo da izostavimo prvi *i2c_msg* koji upisuje adresu registra ukoliko je prethodna transakcija postavila interni bafer na adresu sa koje želimo da čitamo. Npr. ovo bi teoretski značilo da bi se *Read* mogao implementirati i bez *repeated-start* formata sa *write+STOP+read*.  
 
-Ukoliko je *POLL_TIME_US* vrijeme još dodatno izabrano da zadovolji uslov *(ATIME_ms_max + WTIME_ms_max)/POLL_TIME_ms < 2* možemo da očekujemo maksimalno 2 *poll*-a po ciklusu, tako da umjesto čitanja samo *STATUS* registra(1 bajt) a zatim kada je uslov ispunjen čitanja svih registara vezanih za mjerenje(9 bajt-ova), možemo jednostavno da čitamo svih 10 bajtova u jednom *ioctl* sistemskom pozivu.  
-Najgori slučaj *polling*-a za ciklus bi nam tada bio:  
+Provjeru uslova završetka mjerenja ćemo raditi čitanjem *STATUS* registra, a zatim kada je uslov ispunjen čitaćemo registre rezultata mjerenja:  
 ```text
-ioctl 10-byte read   (STATUS+measurement data)
-ioctl 10-byte read   (STATUS+measurement data)
+ioctl 1-byte read   (STATUS register read) 
+ioctl 9-byte read   (Measurement data read) // only if STATUS poll successful
 ```
-umjesto
+ovo se izvršava u dva odvojena *ioctl* sistemska poziva.  
+U *datasheet*-u senzora nije pronađena informacija o atomičnosti čitanja registara, dakle moramo pretpostaviti da nemamo garanciju da pri čitanju ovih registara neće doći do izmjene istih.  
+Ovo prema tome vrijedi čak i kada bi implementirali čitanje sa senzora u jednom *ioctl*:  
 ```text
-ioctl 1-byte read   (STATUS)
-ioctl 1-byte read   (STATUS)
-ioctl 9-byte read   (measurement data)
+ioctl 10-byte read   (STATUS+Measurement data read)
 ```
-Dodatno svi ovi registri se nalaze na sekvencijalnim adresama te je ovako potreban samo jedan upis adrese registra na početku transakcije, takođe osiguravamo atomičnost na nivou I2C bus-a.
+kada bi samo imali atomičnost na nivou *I2C* bus-a.  
 
 *TMD37253* Senzor može da koristi *Standard(100kHz)/Fast(400kHz)* *I2C* modove.  
 [Light-mix-sens-click](https://download.mikroe.com/documents/add-on-boards/click/light_mix-sens_click/light-mix-sens-click-schematic-v100.pdf) pločica na svojim vanjskim *SDA/SCL* pinovima sadrži *pull-up* otpornike od po 4.7kΩ spojene na 3.3V, na ove pinove ćemo povezivati *I2C2* *SDA/SCL* pinove koji se nalaze na *GPIO_1* konektoru na našoj razvojnoj ploči.  
@@ -252,12 +252,13 @@ Cb_max = 300ns / (0.8473 × 4700Ω) = 75pF
 Pri tome kapacitivnost magistrale se mijenja u zavisnosti od *jumpera* koje koristimo za povezivanje pinova.    
 Ukoliko uzmemo u obzir najgoru moguću I2C transakciju za ciklus, ona se sastoji iz:   
 ```text
-2x ioctl 10-byte read   (STATUS+measurement data)
-3x ioctl 1-byte write   (AGAIN adjustment)
-ioctl 1-byte write 		(STATUS register clear)
+ioctl 1-byte read       (STATUS register read) 
+ioctl 9-byte read       (Measurement data read) 
+3x ioctl 1-byte write   (AGAIN adjustment) 
+ioctl 1-byte write 		(STATUS register clear) 
 ```  
-Za *Standard mode* ovo se izvršava ~3.56ms u odnosu na ~0.89ms za *Fast mode*, ovo vrijeme(*I2C_CYCLE_WORST_CASE_TIME_ms*) se nadovezuje na *POLL_TIME_US* i treba ga uzeti u obzir pri odabiru istog.  
-S obzirom da za praktična vremena *ATIME+WTIME* npr. default vrijednosti *171.5ms+241.2ms >> 3.56ms* prihvatljivo je da koristimo *Standard mode* u svrhu povećanja potencijalne otpornosti na efekte parazitne kapacitivnosti na *tr*.  
+Za *Standard mode* ovo se izvršava ~2.52ms u odnosu na ~0.63ms za *Fast mode*, ovo vrijeme(*I2C_CYCLE_WORST_CASE_TIME_ms*) se nadovezuje na *POLL_TIME_US* i treba ga uzeti u obzir pri odabiru istog.  
+S obzirom da za praktična vremena *ATIME+WTIME* npr. default vrijednosti *171.5ms+241.2ms >> 2.52ms* prihvatljivo je da koristimo *Standard mode* u svrhu povećanja potencijalne otpornosti na efekte parazitne kapacitivnosti na *tr*.  
 
 Ukoliko izvršimo *probe* operaciju na *I2C-1* busu (hardverski *I2C-2*) dobijamo sledeće:
 ```text
@@ -358,7 +359,7 @@ Nama su od interesa sledeće veličine:
 *CCT (Correlated Color Temperature)* je proširenje ovog koncepta tako da se uključe izvori koji ne proizvode svjetlost zagrijavanjem(npr. LED).
 Važno je napomenuti da samo tačke koje se nalaze na *Planckian locus* imaju direktnu *CCT* vrijednost, tačkama koje se nalaze van *Planckian locus*-a se dodjeljuje *CCT* njima najbliže tačke na lokusu.  
 
-U *AMS*-ovom ([TMD3725 EVM Users Guide.pdf](https://www.mouser.com/catalog/specsheets/ams_04022019_TMD3725%20EVM%20Users%20Guide.pdf)) *Userguide*-u za senzor možemo da pronađemo sledeće parametre:
+U *AMS*-ovom ([TMD3725 EVM Users Guide.pdf](https://www.mouser.com/catalog/specsheets/ams_04022019_TMD3725%20EVM%20Users%20Guide.pdf)) *Userguide*-u za senzor možemo da pronađemo sledeće koeficijente:
 ```text
 DGF         	  682.85  // Device and Glass Factor(combined Glass Attenuation (GA) * Device Factor (DF))
 C_COEF        		0.16  // Clear channel coefficient for Lux calculation
@@ -369,7 +370,6 @@ CT_COEF    		    4520  // CCT (Correlated Color Temperature) calculation multipl
 CT_OFFSET   	    1804  // CCT calculation offset
 ```
 koji predstavljaju *open-air*(bez zaštitnog stakla) koeficijente za naš senzor i koriste se za računanje nivoa osvjetljenosti(*Lux*) u luxima i korelisane temperature boje(*CCT*) u kelvinima.
-
 
 Za analizu rezultata *ALS* mjerenja i proračun vrijednosti koje su nam od interesa sem *datasheet*-a senzora korišteni su i sledeći prateći materijali koje *AMS* navodi u *Application note* za naš senzor:
 - [LightSensors-AN000519.pdf](https://look.ams-osram.com/asset/f316cb88-c05f-4933-98ea-d0341b59e69e/LightSensors-AN000519.pdf) 
