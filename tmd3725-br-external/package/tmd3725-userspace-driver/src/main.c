@@ -77,7 +77,7 @@ int main(void) {
         .pcfg0 = 0x4F,
         .pcfg1 = 0x4D,
         .wtime = 0x59,
-        .poll_time_us = 400000,
+        .poll_time_us = 50000,
         .prox_det_thresh = 80,
         .prox_emp_thresh = 30
     };
@@ -108,8 +108,8 @@ int main(void) {
 	als_update_cache();
 	/*
        Cycle: ALS(~178ms) + PROX(~12ms) + WTIME(~250ms) = ~440ms, 
-       ATIME_ms_min + WTIME_ms_min = 171.5ms + 241.2ms = 412.7ms > 400ms(POLL_TIME_US) + 3.56ms(I2C transaction worst case)
-       Polling every 400ms (default values)  */
+       ATIME_ms_min + WTIME_ms_min = 171.5ms + 241.2ms = 412.7ms > 50ms(POLL_TIME_US) + 2.52ms(I2C transaction worst case)
+       Polling every 50ms (default values)  */
     const useconds_t POLL_TIME_US = config.poll_time_us;
 	
 	// Thresholds for Proximity PDATA detection/release 
@@ -128,26 +128,33 @@ int main(void) {
                                    TMD3725_STATUS_ASAT;
 
     tmd3725_data_t s_data;
-	int detected = 0;
-	
+    int detected = 0;
+    uint8_t status;
+    	
     printf("\033[?1049h");   // Enter Alternate screen buffer
     printf("\033[H");
     fflush(stdout);
    
     while (g_running) {
+    
 
-    if (tmd3725_read_all(fd, &s_data) < 0) {
-        fprintf(stderr, "[TMD3725][Error] I2C Read all failed\n");
+    if (tmd3725_read_status(fd, &status) < 0) {
+        fprintf(stderr, "[TMD3725][Error] I2C Read status failed\n");
         usleep(POLL_TIME_US);
         continue;
     }
 
-    uint8_t status = s_data.status;
 
     if ((status & PROX_DONE_MASK) && (status & ALS_DONE_MASK)) {
     
-         printf("\033[H");//move to the top
-	 printf("\033[J");//clear screen
+        if (tmd3725_read_data(fd, &s_data) < 0) {
+        fprintf(stderr, "[TMD3725][Error] I2C Read data failed\n");
+        usleep(POLL_TIME_US);
+        continue;
+    }
+    
+        printf("\033[H");//move to the top
+        printf("\033[J");//clear screen
 
         //----------------------------------------------------------------
         // PROXIMITY

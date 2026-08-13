@@ -112,7 +112,7 @@ int tmd3725_init(const char *i2c_device) {
 }
 
 /* ================================================================
- * Attempts to verify the expected ID of the TMD37253 sensor (0xE4)
+ * Attempts to verify the expected ID of the TMD3725 sensor (0xE4)
  * Returns 0 if successful, -1 if the ID is wrong or an error has occured
  * ================================================================ */
 int tmd3725_verify_id(int fd) {
@@ -136,14 +136,14 @@ int tmd3725_verify_id(int fd) {
  * Single-byte register write over I2C
  * From the sensor datasheet a Write transaction consists of:
  * START, CHIP-ADDRESS-WRITE, REGISTER-ADDRESS, DATA BYTE(S), and STOP.
- * Sends [reg_addr, value] in a single ioctl transaction
+ * Sends [reg_addr, value] in a single ioctl system call
  * Returns 0 if write successful, -1 otherwise
  * ================================================================ */
 int tmd3725_write_reg(int fd, uint8_t reg, uint8_t val)
 {
     uint8_t buf[2];
-    buf[0] = reg;
-    buf[1] = val;
+    buf[0] = reg; //register adress
+    buf[1] = val; //byte to be written
 
     struct i2c_msg msg;
     struct i2c_rdwr_ioctl_data msgset;
@@ -171,15 +171,8 @@ int tmd3725_write_reg(int fd, uint8_t reg, uint8_t val)
  * Generic multi-byte register read over I2C (consecutive bytes)
  * From the sensor datasheet a Read transaction consists of:
  * START, CHIP-ADDRESS-WRITE, REGISTER-ADDRESS, START, CHIP-ADDRESS-READ, DATA BYTE(S), and STOP
- * This denotes a Repeated-start format (writes reg address and then without a STOP reads len
- * bytes starting at that address into buf).
- * The sensor has an internal 8-bit buffer that stores the register address location.
- * This buffer auto-increments upon each byte transfer and is retained 
- * even after the STOP command is issued and the I2C bus released.
- * This means that future consecutive Read transactions may omit the register address byte when the
- * Read has to be implemented in more than one ioctl transaction.
- * Additionally this also means that the Sensor Read could theoretically work even without the Repeated-start
- * format (with a write-STOP-read format)
+ * This denotes a Repeated-start format that writes reg address and then without a STOP reads len
+ * bytes starting at that address into buf. It is implemented in a single ioctl system call.
  * Returns 0 if read successful, -1 otherwise
  * ================================================================ */
 int tmd3725_read_reg(int fd, uint8_t reg, uint8_t *buf, uint8_t len)
@@ -197,7 +190,7 @@ int tmd3725_read_reg(int fd, uint8_t reg, uint8_t *buf, uint8_t len)
     msgs[0].flags = 0;  //write flag
     msgs[0].len   = 1;
     msgs[0].buf   = &reg_addr;
-	//read len number of bytes from the starting address
+	//read len consecutive bytes from the starting address
     msgs[1].addr  = TMD3725_I2C_ADDR;
     msgs[1].flags = I2C_M_RD; //read flag
     msgs[1].len   = len;
@@ -215,11 +208,38 @@ int tmd3725_read_reg(int fd, uint8_t reg, uint8_t *buf, uint8_t len)
     return 0;
 }
 
- /* ================================================================
- * Burst-reads STATUS through PDATA (0x93-0x9C) registers (10 bytes total)
- * Unpacks the 10-byte buffer into a tmd3725_data_t structure (status/clear/red/green/blue/proximity)
+/* ================================================================
+ * Reads STATUS register (0x93)
  * Returns 0 if successful, -1 otherwise
  * ================================================================ */
+int tmd3725_read_status(int fd, uint8_t *status)
+{
+    if (!status) return -1;
+    return tmd3725_read_reg(fd, TMD3725_REG_STATUS, status, 1);
+}
+
+ /* ================================================================
+ * Burst-reads CDATAL through PDATA (0x94-0x9C) registers (9 bytes total)
+ * Unpacks the 9-byte buffer into a tmd3725_data_t structure (clear/red/green/blue/proximity)
+ * Could theoretically be implemented without setting the starting address since it is used
+ * after reading the STATUS register, and the internal 8-bit register address buffer
+ * will already be set to 0x94.
+ * Returns 0 if successful, -1 otherwise
+ * ================================================================ */
+int tmd3725_read_data(int fd, tmd3725_data_t *data)
+{
+    if (!data) return -1;
+    uint8_t buf[9];
+    if (tmd3725_read_reg(fd, TMD3725_REG_CDATAL, buf, 9) < 0) return -1;
+    data->clear     = (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);
+    data->red       = (uint16_t)buf[2] | ((uint16_t)buf[3] << 8);
+    data->green     = (uint16_t)buf[4] | ((uint16_t)buf[5] << 8);
+    data->blue      = (uint16_t)buf[6] | ((uint16_t)buf[7] << 8);
+    data->proximity = buf[8];
+    return 0;
+}
+
+ /*
  int tmd3725_read_all(int fd, tmd3725_data_t *data)
 {
     if (!data) return -1;
@@ -236,6 +256,7 @@ int tmd3725_read_reg(int fd, uint8_t reg, uint8_t *buf, uint8_t len)
 
     return 0;
 }
+*/
 
 /* ================================================================
  * Runs proximity offset/crosstalk calibration

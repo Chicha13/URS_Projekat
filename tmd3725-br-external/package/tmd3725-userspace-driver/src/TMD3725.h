@@ -69,7 +69,6 @@ typedef struct {
 
 //Data structure
 typedef struct {
-    uint8_t  status;
     uint16_t clear;
     uint16_t red;
     uint16_t green;
@@ -81,7 +80,9 @@ int tmd3725_init(const char *i2c_device);
 int tmd3725_verify_id(int fd);
 int tmd3725_write_reg(int fd, uint8_t reg, uint8_t val);
 int tmd3725_read_reg(int fd, uint8_t reg, uint8_t *buf, uint8_t len);
-int tmd3725_read_all(int fd, tmd3725_data_t *data);
+//int tmd3725_read_all(int fd, tmd3725_data_t *data);
+int tmd3725_read_status(int fd, uint8_t *status);
+int tmd3725_read_data(int fd, tmd3725_data_t *data);
 int tmd3725_setup(int fd, const tmd3725_config_t *cfg);
 int tmd3725_calibrate_offset(int fd);
 int tmd3725_adjust_again   (int fd, uint16_t clear_counts);
