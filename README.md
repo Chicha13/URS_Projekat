@@ -116,8 +116,8 @@ make clean
 ```
 ili
 ```
-make BR2_EXTERNAL="" menuconfig  #or uncheck the option in External options
 make tmd3725-userspace-driver-dirclean # removes output/build/tmd3725-userspace-driver/
+make BR2_EXTERNAL="" menuconfig  #or uncheck the option in External options
 rm output/target/usr/bin/tmd3725_sensor
 rm output/target/etc/tmd3725.conf
 ```
@@ -234,7 +234,7 @@ ioctl 10-byte read   (STATUS+Measurement data read)
 kada bi samo imali atomičnost na nivou *I2C* bus-a.  
 
 *TMD37253* Senzor može da koristi *Standard(100kHz)/Fast(400kHz)* *I2C* modove.  
-[Light-mix-sens-click](https://download.mikroe.com/documents/add-on-boards/click/light_mix-sens_click/light-mix-sens-click-schematic-v100.pdf) pločica na svojim vanjskim *SDA/SCL* pinovima sadrži *pull-up* otpornike od po 4.7kΩ spojene na 3.3V, na ove pinove ćemo povezivati *I2C2* *SDA/SCL* pinove koji se nalaze na *GPIO_1* konektoru na našoj razvojnoj ploči.  
+[Light-mix-sens-click](https://download.mikroe.com/documents/add-on-boards/click/light_mix-sens_click/light-mix-sens-click-schematic-v100.pdf) pločica na svojim vanjskim *SDA/SCL* pinovima sadrži *pull-up* otpornike od po 4.7kΩ spojene na 3.3V, na ove pinove ćemo povezivati *I2C2* *SDA/SCL* pinove koji se nalaze na *GPIO_0* konektoru na našoj razvojnoj ploči.  
 
 *Rise time* za *SDA/SCL* linije u zavisnosti od *Rp*(*pull up* otpornika) i *Cb*(kapacitivnosti magistrale):
 ```text
